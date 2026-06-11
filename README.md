@@ -2,6 +2,8 @@
 
 Team Fortress Invasion is a project that aims to replicate once cannceled iteration of valve's Team Fortress 2 based on Source SDK 2013.
 
+IMPORTANT: This project follows strick no-leak policy.
+
 e.g. This project is not associated with Valve and Team Fortress/Team Fortress Invasion trademarks belong to Valve and poject name will be changed in future.
  
 ## Build instructions
