@@ -19,6 +19,9 @@ Requirements:
      - MSVC v143 - VS 2022 C++ x64/x86 build tools (Latest)
      - Windows 11 SDK (10.0.22621.0) or Windows 10 SDK (10.0.19041.1)
  - Python 3.13 or later
+ - DirectX SDK 2008
+ - Strawberry Perl with following packages:
+   - String::CRC32
 
 Inside the cloned directory, navigate to `src`, run:
 ```bat
@@ -31,6 +34,17 @@ Then, on the menu bar, go to `Build > Build Solution`, and wait for everything t
 You can then select the `Client (Mod Name)` project you wish to run, right click and select `Set as Startup Project` and hit the big green `> Local Windows Debugger` button on the tool bar in order to launch your mod.
 
 The default launch options should be already filled in for the `Release` configuration.
+
+#### Shaders
+
+This project utilizes **LUX** shaders. To build **LUX**:
+1. Run `src\materialsystem\stdshaders\!Compile_All.bat` to compile all the Shaders.<br>
+The Time this takes depends on your Hardware. This Step is CPU intensive.<br>
+2. Run ```createallprojects.bat ``` to generate the `.sln` Solution File.
+3. Compile the `game_shader_generic_example.dll` using the 'Shaders' Project in the .sln File.<br>
+( This results in a `game_shader_dx9.dll` for SDK2013SP )<br>
+4. Copy the compiled Shaders found in `game\mod_tf\shaders\fxc\` to your `mod\shaders\fxc\` Folder.<br>
+And the previously mentioned .dll File from `game\mod_tf\bin\` your `mod\bin\` Folder.<br>
 
 ### Linux
 
