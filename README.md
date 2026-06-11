@@ -68,7 +68,7 @@ You can then, in the root of the cloned directory, you can navigate to `game` an
 
 ## Extra links
 
-- [Team Fortress Invasion game design document](https://github.com/quellerz/team-fortress-invasion-design-document)
+- [Team Fortress Invasion game design document](https://github.com/ExcitedStateStudio/team-fortress-invasion-design-document)
 
 ## License
 
