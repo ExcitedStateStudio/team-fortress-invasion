@@ -47,6 +47,7 @@ const char *g_aPlayerClassNames[TF_CLASS_MENU_BUTTONS] =
 	"#TF_Class_Name_Pyro",
 	"#TF_Class_Name_Spy",
 	"#TF_Class_Name_Engineer",
+    "#TFI_Class_Name_Human_Commando",
 	"#TF_Class_Name_Civilian",
 	"",
 	"#TF_Random"
@@ -64,6 +65,7 @@ const char *g_aPlayerClassNames_NonLocalized[TF_CLASS_MENU_BUTTONS] =
 	"Pyro",
 	"Spy",
 	"Engineer",
+    "human_commando",
 	"Civilian",
 	"",
 	"Random"
@@ -81,6 +83,7 @@ const char *g_aRawPlayerClassNamesShort[TF_CLASS_MENU_BUTTONS] =
 	"pyro",
 	"spy",
 	"engineer",
+    "human_commando",
 	"civilian",
 	"",
 	"random"
@@ -98,6 +101,7 @@ const char *g_aRawPlayerClassNames[TF_CLASS_MENU_BUTTONS] =
 	"pyro",
 	"spy",
 	"engineer",
+    "human_commando",
 	"civilian",
 	"",
 	"random"
