@@ -128,6 +128,23 @@ bool CTFPlayerClassShared::CustomModelHasChanged( void )
 	}
 	return false;
 }
+const char* g_HACK_GunslingerEngineerArmsOverride = "models\\weapons\\c_models\\c_engineer_gunslinger.mdl";
+
+//-----------------------------------------------------------------------------
+// Purpose: Team-aware variant for Invasion-style classes that have per-team hands.
+//-----------------------------------------------------------------------------
+const char* CTFPlayerClassShared::GetHandModelNameForTeam(int iTeam, int iHandIndex /*= 0*/) const
+{
+	// Gunslinger override 
+	if (iHandIndex != 0)
+		return g_HACK_GunslingerEngineerArmsOverride;
+
+	TFPlayerClassData_t* pData = GetPlayerClassData(m_iClass);
+	if (pData)
+		return pData->GetHandModelNameForTeam(iTeam);
+
+	return GetHandModelName(iHandIndex);
+}
 
 //-----------------------------------------------------------------------------
 // Purpose:
@@ -156,7 +173,6 @@ const char	*CTFPlayerClassShared::GetModelName( void ) const
 //-----------------------------------------------------------------------------
 // Purpose: Initialize the player class.
 //-----------------------------------------------------------------------------
-const char *g_HACK_GunslingerEngineerArmsOverride = "models\\weapons\\c_models\\c_engineer_gunslinger.mdl";
 
 const char *CTFPlayerClassShared::GetHandModelName( int iHandIndex = 0 ) const
 {

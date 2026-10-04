@@ -4,7 +4,7 @@
 //
 //=============================================================================
 
-#ifndef C_TF_PLAYER_H
+#ifndef C_TF_PLAYER_H 
 #define C_TF_PLAYER_H
 #ifdef _WIN32
 #pragma once
@@ -109,6 +109,11 @@ public:
 
 	virtual bool		IsAllowedToSwitchWeapons( void );
 
+	bool	IsBlocking(void) const { return m_bIsBlocking; }
+	bool	IsParrying(void) const { return m_bIsParrying; }
+	void	SetBlocking(bool bBlocking) { m_bIsBlocking = bBlocking; }
+	void	SetParrying(bool bParrying) { m_bIsParrying = bParrying; }
+
 	void    StopViewModelParticles( C_BaseEntity *pParticleEnt );
 
 	virtual void PreThink( void );
@@ -181,6 +186,13 @@ public:
 	void FlushAllPlayerVisibilityState();
 
 	virtual void ComputeFxBlend( void );
+
+	// Handheld shield
+	CNetworkVar(bool, m_bIsBlocking);
+	bool	m_bIsParrying;
+	
+	//Aliens or humans?
+	const char* GetPlayerModel();
 
 	// Taunts/VCDs
 	virtual bool	StartSceneEvent( CSceneEventInfo *info, CChoreoScene *scene, CChoreoEvent *event, CChoreoActor *actor, C_BaseEntity *pTarget );
@@ -352,6 +364,8 @@ protected:
 public:
 	virtual void	NotifyShouldTransmit( ShouldTransmitState_t state );
 
+	CNetworkVar(bool, m_bBullRushActive);
+	CNetworkVar(bool, m_bAdrenalineActive);
 public:
 	// Shared functions
 	float			GetMovementForwardPull( void ) const;
@@ -374,7 +388,7 @@ public:
 	void			GetActiveSets( CUtlVector<const CEconItemSetDefinition *> *pItemSets );
 
 	virtual int GetSkin();
-
+	virtual void PhysicsSimulate() OVERRIDE;
 	float GetLastDamageTimeMvMOnly( void ) const { return m_flMvMLastDamageTime; }
 
 	virtual bool		Weapon_CanSwitchTo( CBaseCombatWeapon *pWeapon );
@@ -466,6 +480,7 @@ public:
 	EHANDLE	m_hRagdoll;
 	Vector m_vecRagdollVelocity;
 
+
 	// Objects
 	int CanBuild( int iObjectType, int iObjectMode=0 );
 	CUtlVector< CHandle<C_BaseObject> > m_aObjects;
@@ -549,6 +564,13 @@ private:
 	float				m_flTauntCamTargetDist;
 	float				m_flTauntCamCurrentDistUp;
 	float				m_flTauntCamTargetDistUp;
+	//HUMAN COMMANDO
+	float m_flCustomBodyYaw;
+	float m_flCustomBodyPitch;
+	
+	Activity m_nCustomAnimActivity;
+	int      m_nCustomAnimSequence;
+	float    m_flNextIdleSwitch;
 
 	QAngle				m_angTauntPredViewAngles;
 	QAngle				m_angTauntEngViewAngles;

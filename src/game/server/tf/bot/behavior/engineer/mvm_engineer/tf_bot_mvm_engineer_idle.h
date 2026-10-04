@@ -43,8 +43,6 @@ private:
 
 	void TryToDetonateStaleNest();
 	bool m_bTriedToDetonateStaleNest;
-
-	bool DoesBuildingRequireAttention( CBaseObject *pObj );
 };
 
 class CTFBotMvMEngineerHintFinder

@@ -1,4 +1,4 @@
-//========= Copyright Valve Corporation, All rights reserved. ============//
+﻿//========= Copyright Valve Corporation, All rights reserved. ============//
 //
 // Purpose: 
 //
@@ -8,6 +8,7 @@
 #include "c_tf_player.h"
 #include "c_user_message_register.h"
 #include "view.h"
+#include "tf_classdata.h"
 #include "iclientvehicle.h"
 #include "ivieweffects.h"
 #include "input.h"
@@ -147,6 +148,7 @@ static_assert( TF_TEAM_BLUE == 3, "If this assert fires, update the assert and t
 CEconItemView *GetEconItemViewFromProxyEntity( void *pEntity );
 C_TFPlayer *GetOwnerFromProxyEntity( void *pEntity );
 
+extern ConVar tf_sc_bullrush_anim_speed;
 // --------------------------------------------------------------------------------
 // Local Convar Helper Function
 // --------------------------------------------------------------------------------
@@ -485,7 +487,7 @@ public:
 		}	
 	}
 
-public:
+public: 
 	CNetworkHandle( CBasePlayer, m_hPlayer );
 	CNetworkVar( int, m_iEvent );
 	CNetworkVar( int, m_nData );
@@ -529,6 +531,7 @@ IMPLEMENT_CLIENTCLASS_DT_NOBASE( C_TFRagdoll, DT_TFRagdoll, CTFRagdoll )
 	RecvPropBool( RECVINFO( m_bOnGround ) ),
 	RecvPropBool( RECVINFO( m_bCloaked ) ),
 	RecvPropBool( RECVINFO( m_bBecomeAsh ) ),
+
 	RecvPropInt( RECVINFO( m_iDamageCustom ) ),
 	RecvPropInt( RECVINFO( m_iTeam ) ),
 	RecvPropInt( RECVINFO( m_iClass ) ),		
@@ -681,41 +684,53 @@ void C_TFRagdoll::ImpactTrace( trace_t *pTrace, int iDamageType, const char *pCu
 void C_TFRagdoll::CreateTFRagdoll()
 {
 	// Get the player.
-	C_TFPlayer *pPlayer = GetPlayer();
+	C_TFPlayer* pPlayer = GetPlayer();
 
 	int nModelIndex = -1;
 
-	if ( pPlayer && pPlayer->GetPlayerClass() && !pPlayer->ShouldDrawSpyAsDisguised() )
+	if (pPlayer && pPlayer->GetPlayerClass() && !pPlayer->ShouldDrawSpyAsDisguised())
 	{
-		nModelIndex = modelinfo->GetModelIndex( pPlayer->GetPlayerClass()->GetModelName() );
+
+		TFPlayerClassData_t* pData = GetPlayerClassData(pPlayer->GetPlayerClass()->GetClassIndex());
+		if (pData)
+		{
+			nModelIndex = modelinfo->GetModelIndex(pData->GetModelNameForTeam(pPlayer->GetTeamNumber()));
+		}
+		else
+		{
+			nModelIndex = modelinfo->GetModelIndex(pPlayer->GetPlayerClass()->GetModelName());
+		}
 	}
 	else
 	{
-		TFPlayerClassData_t *pData = GetPlayerClassData( m_iClass );
-		if ( pData )
+
+		TFPlayerClassData_t* pData = GetPlayerClassData(m_iClass);
+		if (pData)
 		{
-			nModelIndex = modelinfo->GetModelIndex( pData->GetModelName() );
+			nModelIndex = modelinfo->GetModelIndex(pData->GetModelNameForTeam(m_iTeam));
 		}
 	}
 
-	if ( pPlayer )
+	if (pPlayer)
 	{
 		m_flHeadScale = pPlayer->GetHeadScale();
 		m_flTorsoScale = pPlayer->GetTorsoScale();
 		m_flHandScale = pPlayer->GetHandScale();
 	}
 
-	if ( nModelIndex != -1 )
+	if (nModelIndex != -1)
 	{
-		SetModelIndex( nModelIndex );	
+		SetModelIndex(nModelIndex);
 
-		if ( m_iTeam == TF_TEAM_RED )
+
+		TFPlayerClassData_t* pData = GetPlayerClassData(m_iClass);
+		if (pData && pData->m_bUseTeamModels)
 		{
 			m_nSkin = 0;
 		}
 		else
 		{
-			m_nSkin = 1;
+			m_nSkin = (m_iTeam == TF_TEAM_RED) ? 0 : 1;
 		}
 	}
 
@@ -3170,49 +3185,6 @@ bool CStatTrakDigitProxy::HelperOnBindGetStatTrakScore( void *pC_BaseEntity, int
 				}
 			}
 		}
-		else
-		{
-			CTFWeaponBase* pWeap = NULL;
-
-			// Check if it's an attachment for world model
-			C_TFWeaponAttachmentModel* pAttachment = dynamic_cast<C_TFWeaponAttachmentModel*>( pEntity );
-			if ( pAttachment )
-			{
-				// If we're dealing with a world model, Stat Clock will be it's child attachment
-				C_BaseEntity* pParent = pAttachment->GetMoveParent();
-				if ( pParent )
-				{
-					pWeap = dynamic_cast<CTFWeaponBase*>( pParent );
-				}
-			}
-
-			if ( pWeap )
-			{
-				CEconItemView* pItem = pWeap->GetAttributeContainer()->GetItem();
-				if ( pItem && pItem->FindAttribute( GetKillEaterAttr_Score( 0 ), &unScore ) )
-				{
-					*piScore = unScore;
-					bReturnValue = true;
-				}
-			}
-			else
-			{
-				// Are we dealing with a dropped weapon?
-				C_BaseEntity* pParent = pEntity->GetMoveParent();
-				CTFDroppedWeapon* pDroppedWeapon = dynamic_cast<CTFDroppedWeapon*>( pParent );
-
-				if ( pDroppedWeapon )
-				{
-					// We're able to extract item attributes from dropped weapons, including strange count
-					CEconItemView* pItem = pDroppedWeapon->GetItem();
-					if ( pItem && pItem->FindAttribute( GetKillEaterAttr_Score( 0 ), &unScore ) )
-					{
-						*piScore = unScore;
-						bReturnValue = true;
-					}
-				}
-			}
-		}
 	}
 	else
 	{
@@ -3774,11 +3746,13 @@ BEGIN_RECV_TABLE_NOBASE( C_TFPlayer, DT_TFSendHealersDataTable )
 END_RECV_TABLE()
 
 IMPLEMENT_CLIENTCLASS_DT( C_TFPlayer, DT_TFPlayer, CTFPlayer )
-
+	RecvPropBool(RECVINFO(m_bBullRushActive)),
 	RecvPropBool(RECVINFO(m_bSaveMeParity)),
 	RecvPropBool(RECVINFO(m_bIsMiniBoss)),
 	RecvPropBool(RECVINFO(m_bIsABot)),
 	RecvPropInt(RECVINFO(m_nBotSkill)),
+
+
 
 	// This will create a race condition will the local player, but the data will be the same so.....
 	RecvPropInt( RECVINFO( m_nWaterLevel ) ),
@@ -3865,6 +3839,10 @@ C_TFPlayer::C_TFPlayer() :
 	m_mapOverheadEffects( DefLessFunc( const char * ) )
 {
 	m_pAttributes = this;
+
+	//Human commando
+	m_flCustomBodyYaw = 0.f;
+	m_flCustomBodyPitch = 0.f;
 
 	m_PlayerAnimState = CreateTFPlayerAnimState( this );
 	m_Shared.Init( this );
@@ -4078,6 +4056,32 @@ C_TFPlayer::~C_TFPlayer()
 	}
 }
 
+
+
+void C_TFPlayer::PhysicsSimulate(void)
+{
+	BaseClass::PhysicsSimulate();
+
+
+	if (m_bBullRushActive && IsAlive())
+	{
+		QAngle ang = EyeAngles();
+		ang[PITCH] = 0;
+		ang[ROLL] = 0;
+
+		Vector vecDir;
+		AngleVectors(ang, &vecDir);
+		vecDir.z = 0;
+		VectorNormalize(vecDir);
+
+		const float kBullRushSpeed = 800.0f;
+
+		Vector vecNewVel = vecDir * kBullRushSpeed;
+		vecNewVel.z = GetAbsVelocity().z;
+
+		SetAbsVelocity(vecNewVel);
+	}
+}
 // NOTE: This is NOT called every time the player respawns!!
 // only the first time we spawn a player into the world
 void C_TFPlayer::Spawn( void )
@@ -4159,14 +4163,22 @@ C_TFPlayer* C_TFPlayer::GetLocalTFPlayer()
 
 const QAngle& C_TFPlayer::GetRenderAngles()
 {
-	if ( IsRagdoll() )
-	{
+	if (IsRagdoll())
 		return vec3_angle;
-	}
-	else
+
+	TFPlayerClassData_t* pClassData = GetPlayerClass()
+		? GetPlayerClassData(GetPlayerClass()->GetClassIndex())
+		: NULL;
+
+	if (pClassData && pClassData->m_bUseTeamModels)
 	{
-		return m_PlayerAnimState->GetRenderAngles();
+		static QAngle s_angCustomRender;
+		s_angCustomRender.Init();
+		s_angCustomRender[YAW] = m_flCustomBodyYaw;
+		return s_angCustomRender;
 	}
+
+	return m_PlayerAnimState->GetRenderAngles();
 }
 
 bool C_TFPlayer::CanDisplayAllSeeEffect( EAttackBonusEffects_t effect ) const
@@ -4274,34 +4286,172 @@ void C_TFPlayer::GetToolRecordingState( KeyValues *msg )
 
 void C_TFPlayer::UpdateClientSideAnimation()
 {
-	// Update the animation data. It does the local check here so this works when using
-	// a third-person camera (and we don't have valid player angles).
-	if ( this == C_TFPlayer::GetLocalTFPlayer() )
+	TFPlayerClassData_t* pClassData = GetPlayerClass() ? GetPlayerClassData(GetPlayerClass()->GetClassIndex()) : NULL;
+	bool bCustomModel = pClassData && pClassData->m_bUseTeamModels;
+
+	if (!bCustomModel)
 	{
-		// m_angEyeAngles comes from the server, and updates are infrequent, so use the local values instead.
-		QAngle LocalEyeAngles = EyeAngles();
-		m_PlayerAnimState->Update( LocalEyeAngles[YAW], LocalEyeAngles[PITCH] );
+		if (this == C_TFPlayer::GetLocalTFPlayer())
+		{
+			QAngle LocalEyeAngles = EyeAngles();
+			m_PlayerAnimState->Update(LocalEyeAngles[YAW], LocalEyeAngles[PITCH]);
+		}
+		else
+		{
+			m_PlayerAnimState->Update(m_angEyeAngles[YAW], m_angEyeAngles[PITCH]);
+		}
 	}
-	else
+	else if (IsAlive())
 	{
-		m_PlayerAnimState->Update( m_angEyeAngles[YAW], m_angEyeAngles[PITCH] );
+
+		Activity desiredActivity = ACT_MP_STAND_IDLE;
+		float flSpeedSqr = GetAbsVelocity().Length2DSqr();
+
+		if (GetWaterLevel() >= WL_Eyes)
+		{
+			desiredActivity = ACT_MP_SWIM;
+		}
+		else if (GetFlags() & FL_DUCKING)
+		{
+			desiredActivity = (flSpeedSqr > 100.0f) ? ACT_MP_CROUCHWALK : ACT_MP_CROUCH_IDLE;
+		}
+		else if (!(GetFlags() & FL_ONGROUND))
+		{
+			desiredActivity = ACT_MP_JUMP_FLOAT;
+		}
+		else if (flSpeedSqr > 100.0f)
+		{
+			float flMaxSpeed = GetPlayerClass()->GetMaxSpeed();
+			desiredActivity = (flMaxSpeed > 1.0f && flSpeedSqr > Square(flMaxSpeed * 0.55f))
+				? ACT_MP_RUN : ACT_MP_WALK;
+		}
+
+
+		Vector vel = GetAbsVelocity();
+		float flSpeed2D = vel.Length2D();
+
+		float flEyeYaw, flEyePitch;
+		if (IsLocalPlayer())
+		{
+			flEyeYaw = EyeAngles()[YAW];
+			flEyePitch = EyeAngles()[PITCH];
+		}
+		else
+		{
+			flEyeYaw = m_angEyeAngles[YAW];
+			flEyePitch = m_angEyeAngles[PITCH];
+		}
+
+	
+		const float kBodyYawTau = 0.15f;
+		const float kBodyPitchTau = 0.10f;
+
+		float flAlphaYaw = 1.0f - expf(-gpGlobals->frametime / kBodyYawTau);
+		float flAlphaPitch = 1.0f - expf(-gpGlobals->frametime / kBodyPitchTau);
+
+		m_flCustomBodyYaw = m_flCustomBodyYaw + AngleNormalize(flEyeYaw - m_flCustomBodyYaw) * flAlphaYaw;
+		m_flCustomBodyPitch = m_flCustomBodyPitch + (flEyePitch - m_flCustomBodyPitch) * flAlphaPitch;
+
+		int iMoveYawParam = LookupPoseParameter("move_yaw");
+		int iBodyYawParam = LookupPoseParameter("body_yaw");
+		int iBodyPitchParam = LookupPoseParameter("body_pitch");
+
+		if (iMoveYawParam >= 0)
+		{
+			if (flSpeed2D > 5.0f)
+			{
+				float flVelYaw = atan2f(vel.y, vel.x) * 180.0f / M_PI;
+				float flBodyYaw = GetAbsAngles()[YAW];
+				float flMoveYaw = AngleNormalize(flVelYaw - flBodyYaw);
+				SetPoseParameter(iMoveYawParam, flMoveYaw);
+			}
+			else
+			{
+				SetPoseParameter(iMoveYawParam, 0.0f);
+			}
+		}
+
+		if (iBodyYawParam >= 0)
+		{
+			float flResidualYaw = AngleNormalize(flEyeYaw - m_flCustomBodyYaw);
+			SetPoseParameter(iBodyYawParam, clamp(flResidualYaw, -90.0f, 90.0f));
+		}
+
+		if (iBodyPitchParam >= 0)
+		{
+			const float kBodyPitchScale = 1.8f;   
+			const float kPitchDeadZone = 2.0f;   
+
+			float flBodyPitchTarget = m_flCustomBodyPitch * kBodyPitchScale;
+
+			if (fabsf(m_flCustomBodyPitch) < kPitchDeadZone)
+				flBodyPitchTarget = 0.0f;
+
+
+			SetPoseParameter(iBodyPitchParam, clamp(flBodyPitchTarget, -90.0f, 90.0f));
+		}
+
+
+		if (desiredActivity != m_nCustomAnimActivity)
+		{
+			m_nCustomAnimActivity = desiredActivity;
+
+			int nNewSeq = ACTIVITY_NOT_AVAILABLE;
+
+			if (desiredActivity == ACT_MP_RUN)
+				nNewSeq = LookupSequence("run_all");
+			else if (desiredActivity == ACT_MP_WALK)
+				nNewSeq = LookupSequence("walk_all");
+
+			if (nNewSeq == ACTIVITY_NOT_AVAILABLE)
+				nNewSeq = SelectWeightedSequence(desiredActivity);
+
+			if (nNewSeq == ACTIVITY_NOT_AVAILABLE)
+				nNewSeq = SelectWeightedSequence(ACT_MP_STAND_IDLE);
+
+			if (nNewSeq != ACTIVITY_NOT_AVAILABLE)
+			{
+				SetSequence(nNewSeq);
+				SetCycle(0.0f);
+				ResetSequenceInfo();
+				m_nCustomAnimSequence = nNewSeq;
+			}
+
+			if (desiredActivity == ACT_MP_STAND_IDLE)
+				m_flNextIdleSwitch = gpGlobals->curtime + RandomFloat(4.0f, 8.0f);
+		}
+		else if (desiredActivity == ACT_MP_STAND_IDLE)
+		{
+			if (gpGlobals->curtime > m_flNextIdleSwitch)
+			{
+				m_flNextIdleSwitch = gpGlobals->curtime + RandomFloat(4.0f, 8.0f);
+				m_nCustomAnimActivity = ACT_INVALID;
+			}
+		}
+	}
+	if (bCustomModel)
+	{
+		m_flPlaybackRate = 1.0f;
 	}
 
-	// StatTrak Module Test
-	// Update ViewModels
-	// We only update the view model for the local player.
-	//if ( IsLocalPlayer() )
+	if (m_bBullRushActive)
 	{
-		CTFWeaponBase *pWeapon = GetActiveTFWeapon();
-		if ( pWeapon )
-		{
-			pWeapon->UpdateAllViewmodelAddons();
-		}
+		m_flPlaybackRate *= tf_sc_bullrush_anim_speed.GetFloat();
+	}
+	else if (m_bAdrenalineActive)
+	{
+		m_flPlaybackRate *= 1.25f;
+	}
+
+
+	CTFWeaponBase* pWeapon = GetActiveTFWeapon();
+	if (pWeapon)
+	{
+		pWeapon->UpdateAllViewmodelAddons();
 	}
 
 	BaseClass::UpdateClientSideAnimation();
 }
-
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
@@ -5053,6 +5203,30 @@ void C_TFPlayer::InitInvulnerableMaterial( void )
 	}
 }
 
+
+/*
+
+const char* C_TFPlayer::GetPlayerModel()
+{
+	
+	if (IsPlayerClass(TF_CLASS_SOLDIER))
+	{
+		int iTeam = GetTeamNumber();
+
+		if (iTeam == TEAM_HUMANS)
+		{
+	
+			return "models/player/human_commando.mdl";
+		}
+		else if (iTeam == TEAM_ALIENS)
+		{
+			
+			return "models/player/alien_commando.mdl";
+		}
+	}
+
+}
+*/
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
@@ -6591,6 +6765,15 @@ bool C_TFPlayer::CreateMove( float flInputSampleTime, CUserCmd *pCmd )
 	
 	bool bNoTaunt = true;
 	bool bInTaunt = m_Shared.InCond( TF_COND_TAUNTING ) || m_Shared.InCond( TF_COND_HALLOWEEN_THRILLER );
+
+	if (m_bBullRushActive)
+	{
+	
+		pCmd->viewangles = m_angEyeAngles;   
+		pCmd->sidemove = 0;
+		pCmd->forwardmove = 0;              
+		return true;
+	}
 
 	if ( m_Shared.InCond( TF_COND_FREEZE_INPUT ) )
 	{
@@ -8987,6 +9170,9 @@ Vector C_TFPlayer::GetChaseCamViewOffset( CBaseEntity *target )
 //-----------------------------------------------------------------------------
 void C_TFPlayer::ValidateModelIndex( void )
 {
+//	Msg("[client ValidateModelIndex] START team=%d class=%d\n",
+	//	GetTeamNumber(), GetPlayerClass() ? GetPlayerClass()->GetClassIndex() : -1);
+
 	if ( m_Shared.InCond( TF_COND_DISGUISED_AS_DISPENSER ) && IsEnemyPlayer() && ( GetFlags() & FL_DUCKING ) && ( GetGroundEntity() != NULL ) )
 	{
 		m_nModelIndex = modelinfo->GetModelIndex( "models/buildables/dispenser_light.mdl" );
@@ -9017,7 +9203,10 @@ void C_TFPlayer::ValidateModelIndex( void )
 		C_TFPlayerClass *pClass = GetPlayerClass();
 		if ( pClass )
 		{
-			m_nModelIndex = modelinfo->GetModelIndex( pClass->GetModelName() );
+			TFPlayerClassData_t* pData = GetPlayerClassData(pClass->GetClassIndex());
+			const char* pszModel = pData ? pData->GetModelNameForTeam(GetTeamNumber()) : pClass->GetModelName();
+			m_nModelIndex = modelinfo->GetModelIndex(pszModel);
+
 		}
 	}
 
@@ -9035,6 +9224,9 @@ void C_TFPlayer::ValidateModelIndex( void )
 			SetBodygroup( m_iSpyMaskBodygroup, 0 );
 		}
 	}
+
+	//Msg("[client ValidateModelIndex] END m_nModelIndex=%d model='%s'\n",
+	//	m_nModelIndex, modelinfo->GetModelName((model_t*)modelinfo->GetModel(m_nModelIndex)));
 
 	BaseClass::ValidateModelIndex();
 }

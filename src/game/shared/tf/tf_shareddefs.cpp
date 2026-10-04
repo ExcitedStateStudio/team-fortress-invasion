@@ -28,7 +28,7 @@ color32 g_aTeamColors[TF_TEAM_COUNT] =
 	{ 0, 0, 0, 0 },
 	{ 0, 0, 0, 0 },
 	{ 255, 0, 0, 0 },
-	{ 0, 0, 255, 0 }
+	{ 0, 170, 0, 0 }
 };
 
 //-----------------------------------------------------------------------------
@@ -602,6 +602,9 @@ const char *g_aWeaponNames[] =
 	"TF_WEAPON_BAT",
 	"TF_WEAPON_BAT_WOOD",
 	"TF_WEAPON_BOTTLE", 
+	"TF_WEAPON_TWOHANDEDCONTAINER",
+	"TF_WEAPON_SHIELD",
+	"TF_WEAPON_PLASMARIFLE",
 	"TF_WEAPON_FIREAXE",
 	"TF_WEAPON_CLUB",
 	"TF_WEAPON_CROWBAR",

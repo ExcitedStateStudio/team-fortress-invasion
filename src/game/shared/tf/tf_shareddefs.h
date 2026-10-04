@@ -25,6 +25,10 @@
 #define	MAX_MVM_WAVE_STRING 256
 
 
+#define TEAM_HUMANS  TF_TEAM_RED
+#define TEAM_ALIENS  TF_TEAM_BLUE
+
+
 //-----------------------------------------------------------------------------
 // Teams.
 //-----------------------------------------------------------------------------
@@ -77,6 +81,23 @@ enum
 
 	NUM_TEAM_ROLES,
 };
+
+//--------------------------------------------------------------------------
+// Collision groups
+//--------------------------------------------------------------------------
+enum
+{
+	TFCOLLISION_GROUP_SHIELD = LAST_SHARED_COLLISION_GROUP,
+	TFCOLLISION_GROUP_WEAPON,
+	TFCOLLISION_GROUP_GRENADE,
+	TFCOLLISION_GROUP_RESOURCE_CHUNK,
+	// Combat objects (override for above)
+	TFCOLLISION_GROUP_COMBATOBJECT,
+	// Objects in general
+	TFCOLLISION_GROUP_OBJECT,
+	TFCOLLISION_GROUP_OBJECT_SOLIDTOPLAYERMOVEMENT,
+};
+
 
 enum HalloweenBossType
 {
@@ -408,6 +429,9 @@ enum ETFWeaponType
 	TF_WEAPON_BAT,
 	TF_WEAPON_BAT_WOOD,
 	TF_WEAPON_BOTTLE, 
+	TF_WEAPON_TWOHANDEDCONTAINER,
+	TF_WEAPON_SHIELD,
+	TF_WEAPON_PLASMARIFLE,
 	TF_WEAPON_FIREAXE,
 	TF_WEAPON_CLUB,
 	TF_WEAPON_CROWBAR,
@@ -1312,12 +1336,13 @@ inline bool IsHeadshot( int iType )
 	return (iType == TF_DMG_CUSTOM_HEADSHOT || iType == TF_DMG_CUSTOM_HEADSHOT_DECAPITATION);
 }
 
+//INVASION START -- AGR
 enum
 {
 	TF_COLLISIONGROUP_GRENADES = LAST_SHARED_COLLISION_GROUP,
-	TFCOLLISION_GROUP_OBJECT,
-	TFCOLLISION_GROUP_OBJECT_SOLIDTOPLAYERMOVEMENT,
-	TFCOLLISION_GROUP_COMBATOBJECT,
+	//TFCOLLISION_GROUP_OBJECT,
+	//TFCOLLISION_GROUP_OBJECT_SOLIDTOPLAYERMOVEMENT,
+	//TFCOLLISION_GROUP_COMBATOBJECT,
 	TFCOLLISION_GROUP_ROCKETS,		// Solid to players, but not player movement. ensures touch calls are originating from rocket
 	TFCOLLISION_GROUP_RESPAWNROOMS,
 	TFCOLLISION_GROUP_TANK,
@@ -1327,6 +1352,86 @@ enum
 	// ADD NEW ITEMS HERE TO AVOID BREAKING DEMOS
 	//
 };
+
+//--------------------------------------------------------------------------
+// COMBAT SHIELD
+//--------------------------------------------------------------------------
+#define SHIELD_HITGROUP				1
+#define SHIELD_BASH_FLESH_SOUND		"weapons/comboshield/shieldbash_flesh.wav"
+#define SHIELD_TURNON_SOUND			"weapons/comboshield/turnon.wav"
+#define SHIELD_TURNOFF_SOUND			"weapons/comboshield/turnoff.wav"
+
+// Length after raising the shield during which releasing the shield will cause a parry
+#define PARRY_DETECTION_TIME			0.5
+// Length after a parry detection in which a parry can occur
+#define PARRY_OPPORTUNITY_LENGTH		0.3
+// Length after a parry has finished before I can do anything again
+#define PARRY_VULNERABLE_TIME			0.5
+
+//--------------------------------------------------------------------------
+// PORTABLE POWER GENERATOR - BUFF STATION
+//--------------------------------------------------------------------------
+#define BUFF_STATION_MAX_PLAYERS		4
+#define BUFF_STATION_MAX_PLAYER_BITS	3
+#define BUFF_STATION_MAX_OBJECTS		3
+#define BUFF_STATION_MAX_OBJECT_BITS	2
+
+//--------------------------------------------------------------------------
+// ADRENALIN
+//--------------------------------------------------------------------------
+// Animation speed while in adrenalin
+#define ADRENALIN_ANIM_SPEED	1.5
+
+//--------------------------------------------------------------------------
+// PLASMA RIFLE
+//--------------------------------------------------------------------------
+#define MAX_RIFLE_POWER		3.0
+#define RIFLE_CHARGE_TIME	2.0
+
+//--------------------------------------------------------------------------
+// HUMAN POWER PACKS
+//--------------------------------------------------------------------------
+#define MAX_OBJECTS_PER_PACK		3
+
+//--------------------------------------------------------------------------
+// Rally flag defines
+//--------------------------------------------------------------------------
+
+#define RALLYFLAG_MINS				Vector(-20, -20, 0)
+#define RALLYFLAG_MAXS				Vector( 20,  20, 90)
+#define RALLYFLAG_RADIUS			512			
+#define RALLYFLAG_LIFETIME			30
+#define RALLYFLAG_RATE				2			// Rate at which it looks for friendlies to rally
+#define RALLYFLAG_ADRENALIN_TIME	5			// Time an adrenalin rush lasts
+#define RALLYFLAG_MODEL				"models/props/common/holo_banner/holo_banner.mdl"
+
+
+//--------------------------------------------------------------------------
+// Resupply-related stuff
+//--------------------------------------------------------------------------
+enum ResupplyBuyType_t
+{
+	RESUPPLY_BUY_AMMO = 0,
+	RESUPPLY_BUY_HEALTH,
+	RESUPPLY_BUY_GRENADES,
+	RESUPPLY_BUY_ALL,
+
+	RESUPPLY_BUY_TYPE_COUNT
+};
+
+#define RESUPPLY_HEALTH_COST			20
+#define RESUPPLY_AMMO_COST				5
+#define RESUPPLY_GRENADES_COST			25
+#define RESUPPLY_ALL_COST				50
+#define RESUPPLY_ROCKET_COST			100
+
+// Build animation events
+#define TF_OBJ_ENABLEBODYGROUP			6000
+#define TF_OBJ_DISABLEBODYGROUP			6001
+#define TF_OBJ_ENABLEALLBODYGROUPS		6002
+#define TF_OBJ_DISABLEALLBODYGROUPS		6003
+#define TF_OBJ_PLAYBUILDSOUND			6004
+
 
 // Stun flags
 #define TF_STUN_NONE						0

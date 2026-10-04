@@ -38,14 +38,14 @@ CItemGeneration::CItemGeneration( void )
 //-----------------------------------------------------------------------------
 // Purpose: Generate a random item matching the specified criteria
 //-----------------------------------------------------------------------------
-CBaseEntity *CItemGeneration::GenerateRandomItem( CItemSelectionCriteria *pCriteria, const Vector &vecOrigin, const QAngle &vecAngles, const char* pszOverrideClassName, int classNum )
+CBaseEntity *CItemGeneration::GenerateRandomItem( CItemSelectionCriteria *pCriteria, const Vector &vecOrigin, const QAngle &vecAngles, const char* pszOverrideClassName )
 {
 	entityquality_t iQuality;
 	int iChosenItem = ItemSystem()->GenerateRandomItem( pCriteria, &iQuality );
 	if ( iChosenItem == INVALID_ITEM_DEF_INDEX )
 		return NULL;
 
-	return SpawnItem( iChosenItem, vecOrigin, vecAngles, pCriteria->GetItemLevel(), iQuality, pszOverrideClassName, classNum );
+	return SpawnItem( iChosenItem, vecOrigin, vecAngles, pCriteria->GetItemLevel(), iQuality, pszOverrideClassName );
 }
 
 //-----------------------------------------------------------------------------
@@ -79,7 +79,7 @@ CBaseEntity *CItemGeneration::GenerateBaseItem( struct baseitemcriteria_t *pCrit
 //-----------------------------------------------------------------------------
 // Purpose: Create a new instance of the chosen item
 //-----------------------------------------------------------------------------
-CBaseEntity *CItemGeneration::SpawnItem( int iChosenItem, const Vector &vecAbsOrigin, const QAngle &vecAbsAngles, int iItemLevel, entityquality_t entityQuality, const char *pszOverrideClassName, const int classNum )
+CBaseEntity *CItemGeneration::SpawnItem( int iChosenItem, const Vector &vecAbsOrigin, const QAngle &vecAbsAngles, int iItemLevel, entityquality_t entityQuality, const char *pszOverrideClassName )
 {
 	CEconItemDefinition *pData = ItemSystem()->GetStaticDataForItemByDefIndex( iChosenItem );
 	if ( !pData )
@@ -105,7 +105,6 @@ CBaseEntity *CItemGeneration::SpawnItem( int iChosenItem, const Vector &vecAbsOr
 		if ( !pszOverrideClassName )
 			return NULL;
 
-		pszOverrideClassName = TranslateWeaponEntForClass(pszOverrideClassName, classNum);
 		pItem = CreateEntityByName( pszOverrideClassName );
 	}
 

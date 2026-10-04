@@ -209,6 +209,8 @@ FilePlayerClassInfo_t::FilePlayerClassInfo_t()
 	m_szPrintName[0] = 0;
 	m_szPlayerModel[0] = 0;
 	m_szSelectCmd[0] = 0;
+	m_szPlayerModelRed[0] = 0;
+	m_szPlayerModelBlue[0] = 0;
 }
 
 void FilePlayerClassInfo_t::Parse( KeyValues *pKeyValuesData, const char *szPlayerClassName )
@@ -224,6 +226,14 @@ void FilePlayerClassInfo_t::Parse( KeyValues *pKeyValuesData, const char *szPlay
 
 	// Player Model
 	Q_strncpy( m_szPlayerModel, pKeyValuesData->GetString( "playermodel", "!! Missing playermodel on Player Class" ), MAX_PLAYERCLASS_NAME_LENGTH );
+
+	// Playermodel HUMAN
+	const char* pszRedModel = pKeyValuesData->GetString("playermodel_human", "!! Missing playermodelRED on Player Class");
+	Q_strncpy(m_szPlayerModelRed, pszRedModel, MAX_PLAYERCLASS_NAME_LENGTH);
+
+	// Playermodel ALIEN
+	const char* pszBlueModel = pKeyValuesData->GetString("playermodel_alien", "!! Missing playermodelBLUE on Player Class");
+	Q_strncpy(m_szPlayerModelBlue, pszBlueModel, MAX_PLAYERCLASS_NAME_LENGTH);
 
 	// Select command
 	Q_strncpy( m_szSelectCmd, pKeyValuesData->GetString( "selectcmd", "!! Missing selectcmd on Player Class" ), 32 );

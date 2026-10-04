@@ -290,6 +290,11 @@ inline bool IsIndexIntoPlayerArrayValid( int iIndex )
 
 #define MAX_TEAMS_ARRAY_SAFE 	MAX_TEAMS
 
+// Fortress Specific
+#define	DMG_EMP		DMG_PLASMA
+#define	DMG_PROBE	DMG_AIRBOAT
+
+
 // Weapon m_iState
 #define WEAPON_IS_ONTARGET				0x40
 

@@ -51,7 +51,15 @@ TFPlayerClassData_t::TFPlayerClassData_t()
 	m_szModelName[0] = '\0';
 	m_szHWMModelName[0] = '\0';
 	m_szHandModelName[0] = '\0';
+	//Alien or human hands
+	m_szHandModelNameRed[0] = '\0';    
+	m_szHandModelNameBlue[0] = '\0';   
+
 	m_szLocalizableName[0] = '\0';
+	//INVASION
+	m_szModelNameRed[0] = '\0';		
+	m_szModelNameBlue[0] = '\0';
+
 	m_flMaxSpeed = 0.0f;
 	m_nMaxHealth = 0;
 	m_nMaxArmor = 0;
@@ -84,6 +92,16 @@ TFPlayerClassData_t::TFPlayerClassData_t()
 	}
 
 	m_bParsed = false;
+}
+
+const char* TFPlayerClassData_t::GetTeamModelName(int iTeam) const
+{
+	if (m_bUseTeamModels)
+	{
+		if (iTeam == TF_TEAM_RED && m_szModelNameRed[0] != '\0') return m_szModelNameRed;
+		if (iTeam == TF_TEAM_BLUE && m_szModelNameBlue[0] != '\0') return m_szModelNameBlue;
+	}
+	return m_szModelName;
 }
 
 //-----------------------------------------------------------------------------
@@ -147,7 +165,57 @@ void TFPlayerClassData_t::ParseData( KeyValues *pKeyValuesData )
 	}
 	Q_strncpy( m_szModelName, pKeyValuesData->GetString( "model" ), TF_NAME_LENGTH );
 	Q_strncpy( m_szHandModelName, pKeyValuesData->GetString( "model_hands" ), TF_NAME_LENGTH );
+	//Hands system
+	Q_strncpy(m_szHandModelNameRed,
+		pKeyValuesData->GetString("model_hands_red", ""),
+		TF_NAME_LENGTH);
+	Q_strncpy(m_szHandModelNameBlue,
+		pKeyValuesData->GetString("model_hands_blue", ""),
+		TF_NAME_LENGTH);
+
 	Q_strncpy( m_szLocalizableName, pKeyValuesData->GetString( "localize_name" ), TF_NAME_LENGTH );
+
+	//INVASION
+	Q_strncpy(m_szModelNameRed, pKeyValuesData->GetString("model_red"), TF_NAME_LENGTH);
+	Q_strncpy(m_szModelNameBlue, pKeyValuesData->GetString("model_blue"), TF_NAME_LENGTH);
+
+	m_bUseTeamModels = (pKeyValuesData->GetInt("use_team_models", 0) != 0)
+		&& (m_szModelNameRed[0] != '\0')
+		&& (m_szModelNameBlue[0] != '\0');
+
+	//Hands system
+	if (m_szHandModelNameRed[0] == '\0')
+		Q_strncpy(m_szHandModelNameRed, m_szHandModelName, TF_NAME_LENGTH);
+	if (m_szHandModelNameBlue[0] == '\0')
+		Q_strncpy(m_szHandModelNameBlue, m_szHandModelName, TF_NAME_LENGTH);
+
+
+//	Msg("[classdata] %s: use_team_models_raw=%d red='%s' blue='%s' result=%d\n",
+	//	m_szClassName,
+	//	pKeyValuesData->GetInt("use_team_models", 0),
+	//	m_szModelNameRed,
+	//	m_szModelNameBlue,
+	//	m_bUseTeamModels);
+
+
+	if (m_szModelName[0] == '\0')
+	{
+		if (m_bUseTeamModels)
+			Q_strncpy(m_szModelName, m_szModelNameRed, TF_NAME_LENGTH);
+		else
+			Q_strncpy(m_szModelName, "models/player/scout.mdl", TF_NAME_LENGTH);
+	}
+
+
+#ifdef CLIENT_DLL
+	if (m_bUseTeamModels)
+	{
+		Q_strncpy(m_szHWMModelName,
+			pKeyValuesData->GetString("model_red_hwm", ""),
+			TF_NAME_LENGTH);
+	
+	}
+#endif
 
 	m_flMaxSpeed = pKeyValuesData->GetFloat( "speed_max" );
 	m_nMaxHealth = pKeyValuesData->GetInt( "health_max" );
@@ -202,6 +270,37 @@ void TFPlayerClassData_t::ParseData( KeyValues *pKeyValuesData )
 
 	// The file has been parsed.
 	m_bParsed = true;
+}
+
+//Invasion hands system
+const char* TFPlayerClassData_t::GetHandModelNameForTeam(int iTeam) const
+{
+	if (iTeam == TF_TEAM_RED && m_szHandModelNameRed[0] != '\0')
+		return m_szHandModelNameRed;
+
+	if (iTeam == TF_TEAM_BLUE && m_szHandModelNameBlue[0] != '\0')
+		return m_szHandModelNameBlue;
+
+	return m_szHandModelName;
+}
+
+const char* TFPlayerClassData_t::GetModelNameForTeam(int iTeam) const
+{
+	if (m_bUseTeamModels)
+	{
+		if (iTeam == TF_TEAM_RED && m_szModelNameRed[0] != '\0')
+		{
+			//Msg("[classdata] %s team RED -> %s\n", m_szClassName, m_szModelNameRed);
+			return m_szModelNameRed;
+		}
+		if (iTeam == TF_TEAM_BLUE && m_szModelNameBlue[0] != '\0')
+		{
+		//	Msg("[classdata] %s team BLU -> %s\n", m_szClassName, m_szModelNameBlue);
+			return m_szModelNameBlue;
+		}
+	}
+	//Msg("[classdata] %s team %d -> fallback %s\n", m_szClassName, iTeam, m_szModelName);
+	return m_szModelName;
 }
 
 //-----------------------------------------------------------------------------

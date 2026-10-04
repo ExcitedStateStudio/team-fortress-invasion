@@ -176,7 +176,6 @@ PRECACHE_REGISTER( tank_boss );
 
 IMPLEMENT_SERVERCLASS_ST( CTFTankBoss, DT_TFTankBoss)
 	//SendPropVector(SENDINFO(m_StartColor), 8, 0, 0, 1),
-	SendPropStringT(SENDINFO(m_iszClassIcon))
 END_SEND_TABLE()
 
 
@@ -519,11 +518,10 @@ void CTFTankBoss::Spawn( void )
 void CTFTankBoss::UpdateOnRemove( void )
 {
 	StopSound( "MVM.TankEngineLoop" );
-	StopSound( "MVM.TankDeploy" );
 
 	if ( TFObjectiveResource() )
 	{
-		TFObjectiveResource()->DecrementMannVsMachineWaveClassCount( GetClassIconName(), MVM_CLASS_FLAG_NORMAL | MVM_CLASS_FLAG_MINIBOSS);
+		TFObjectiveResource()->DecrementMannVsMachineWaveClassCount( MAKE_STRING( "tank" ), MVM_CLASS_FLAG_NORMAL | MVM_CLASS_FLAG_MINIBOSS );
 	}
 
 	BaseClass::UpdateOnRemove();
@@ -983,7 +981,6 @@ void CTFTankBoss::FirePopFileEvent( EventInfo *eventInfo )
 void CTFTankBoss::Explode( void )
 {
 	StopSound( "MVM.TankEngineLoop" );
-	StopSound( "MVM.TankDeploy" );
 
 	FirePopFileEvent( &m_onKilledEventInfo );
 

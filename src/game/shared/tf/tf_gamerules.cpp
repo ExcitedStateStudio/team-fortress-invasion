@@ -127,6 +127,7 @@
 	#include "tf_party.h"
 	#include "tf_autobalance.h"
 	#include "player_voice_listener.h"
+
 #endif
 
 #include "tf_mann_vs_machine_stats.h"
@@ -150,6 +151,7 @@
 #include "tier3/tier3.h"
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
+
 
 
 #define ITEM_RESPAWN_TIME	10.0f
@@ -932,35 +934,7 @@ ConVar tf_grapplinghook_enable( "tf_grapplinghook_enable", "0", FCVAR_REPLICATED
 
 #ifdef GAME_DLL
 CUtlString s_strNextMvMPopFile;
-
-static int PopfileCompletion( char const *partial, char commands[ COMMAND_COMPLETION_MAXITEMS ][ COMMAND_COMPLETION_ITEM_LENGTH ] )
-{
-	int matches = 0;
-
-	partial += ARRAYSIZE( "tf_mvm_popfile " ) - 1;
-	const int partialLen = V_strlen( partial );
-
-	if ( TFGameRules() && g_pPopulationManager )
-	{
-		CUtlVector< CUtlString > shortNames;
-		g_pPopulationManager->FindDefaultPopulationFileShortNames( shortNames );
-
-		shortNames.Sort( CUtlString::SortCaseInsensitive );
-
-		for ( int i = 0; i < shortNames.Count() && matches < COMMAND_COMPLETION_MAXITEMS; ++i )
-		{
-			const char *popfile = shortNames[ i ];
-			if ( partialLen == 0 || !V_strncasecmp( popfile, partial, partialLen ) )
-			{
-				V_snprintf( commands[ matches++ ], COMMAND_COMPLETION_ITEM_LENGTH, "tf_mvm_popfile %s", popfile );
-			}
-		}
-	}
-
-	return matches;
-}
-
-CON_COMMAND_F_COMPLETION( tf_mvm_popfile, "Change to a target popfile for MvM", FCVAR_GAMEDLL, PopfileCompletion )
+CON_COMMAND_F( tf_mvm_popfile, "Change to a target popfile for MvM", FCVAR_GAMEDLL )
 {
 	// Listenserver host or rcon access only!
 	if ( !UTIL_IsCommandIssuedByServerAdmin() )
@@ -1165,10 +1139,6 @@ ConVar tf_competitive_required_late_join_timeout( "tf_competitive_required_late_
                                                   "How long to wait for late joiners in matches requiring full player counts before canceling the match" );
 ConVar tf_competitive_required_late_join_confirm_timeout( "tf_competitive_required_late_join_confirm_timeout", "30", FCVAR_DEVELOPMENTONLY,
                                                           "How long to wait for the GC to confirm we're in the late join pool before canceling the match" );
-
-ConVar tf_ready_countdown_reduce_per_player( "tf_ready_countdown_reduce_per_player", "30", FCVAR_NONE, "How many seconds we should reduce the countdown timer by per player readying up" );
-ConVar tf_ready_countdown_minimum( "tf_ready_countdown_minimum", "60", FCVAR_NONE, "When players ready up never reduce the countdown timer below this number of seconds" );
-
 #endif // GAME_DLL
 
 ConVar tf_gamemode_community ( "tf_gamemode_community", "0", FCVAR_REPLICATED | FCVAR_NOTIFY | FCVAR_DEVELOPMENTONLY );
@@ -3112,24 +3082,14 @@ void CTFGameRules::PlayerReadyStatus_UpdatePlayerState( CTFPlayer *pTFPlayer, bo
 	{
 		if ( IsMannVsMachineMode() || IsCompetitiveMode() )
 		{
-			int nReadyCountdownMinimum = tf_ready_countdown_minimum.GetFloat();
-			int nReadyCountdownReducePerPlayer = tf_ready_countdown_reduce_per_player.GetFloat();
-
-			const IMatchGroupDescription* pMatchDesc = GetMatchGroupDescription( GetCurrentMatchGroup() );
-			if ( pMatchDesc )
-			{
-				nReadyCountdownMinimum = pMatchDesc->GetReadyCountdownMinimum();
-				nReadyCountdownReducePerPlayer = pMatchDesc->GetReadyCountdownReducePerPlayer();
-			}
-
 			// Reduce timer as each player hits Ready, but only once per-player
-			if ( !m_bPlayerReadyBefore[nEntIndex] && m_flRestartRoundTime > gpGlobals->curtime + nReadyCountdownMinimum )
+			if ( !m_bPlayerReadyBefore[nEntIndex] && m_flRestartRoundTime > gpGlobals->curtime + 60.f )
 			{
-				float flReduceBy = nReadyCountdownReducePerPlayer;
-				if ( m_flRestartRoundTime < gpGlobals->curtime + nReadyCountdownReducePerPlayer + nReadyCountdownMinimum )
+				float flReduceBy = 30.f;
+				if ( m_flRestartRoundTime < gpGlobals->curtime + 90.f )
 				{
-					// Never reduce below tf_ready_countdown_minimum seconds remaining
-					flReduceBy = m_flRestartRoundTime - gpGlobals->curtime - nReadyCountdownMinimum;
+					// Never reduce below 60 seconds remaining
+					flReduceBy = m_flRestartRoundTime - gpGlobals->curtime - 60.f;
 				}
 
 				m_flRestartRoundTime -= flReduceBy;
@@ -5755,6 +5715,7 @@ void CTFGameRules::RadiusDamage( CTFRadiusDamageInfo &info )
 		}
 	}
 }
+
 
 //-----------------------------------------------------------------------------
 // Purpose: Calculate the damage falloff over distance
@@ -17484,6 +17445,253 @@ bool CTFGameRules::UseSillyGibs( void )
 	return m_bSillyGibs;
 }
 
+/*
+void CTFGameRules::WeaponTraceLine(const Vector& src, const Vector& end, unsigned int mask, CBaseEntity* pShooter, int damageType, trace_t* pTrace)
+{
+	// Iterate over all shields on the same team, disable them so
+	// we don't intersect with them...
+	CShield::ActivateShields(false, pShooter->GetTeamNumber());
+
+	UTIL_TraceLine(src, end, mask, pShooter, /* TFCOLLISION_GROUP_WEAPON */ /*COLLISION_GROUP_NONE, pTrace);
+
+#if 0
+#if !defined( CLIENT_DLL )
+	NDebugOverlay::Line(src, pTrace->endpos, 255, 255, 255, true, 5.0);
+	NDebugOverlay::Box(pTrace->endpos, Vector(-2, -2, -2), Vector(2, 2, 2), 255, 255, 255, true, 5.0);
+#endif
+#endif
+
+	// Shield check...
+	if (pTrace->fraction != 1.0)
+	{
+		CBaseEntity* pEntity = pTrace->m_pEnt;
+		CShield* pShield = dynamic_cast<CShield*>(pEntity);
+		if (pShield)
+		{
+			Vector vecDir;
+			VectorSubtract(end, src, vecDir);
+
+			// We deflected all of the damage
+			pShield->RegisterDeflection(vecDir, damageType, pTrace);
+		}
+	}
+
+	// Reactivate all shields
+	CShield::ActivateShields(true);
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Fire a generic bullet
+//-----------------------------------------------------------------------------
+void CTFGameRules::FireBullets(const CTakeDamageInfo& info, int cShots, const Vector& vecSrc, const Vector& vecDirShooting,
+	const Vector& vecSpread, float flDistance, int iAmmoType,
+	int iTracerFreq, int firingEntID, int attachmentID, const char* sCustomTracer)
+{
+	// This function should've been implemented as an override for FireBullets in the CBaseEntity class, under CBaseTFCombatWeapon
+	// instead of here. So in the long term we should probably move it across to there (and use FireBulletsInfo_t).
+
+	static int tracerCount;
+	bool tracer;
+	trace_t tr;
+	CTakeDamageInfo subInfo = info;
+	CBaseTFCombatWeapon* pWeapon = dynamic_cast<CBaseTFCombatWeapon*>(info.GetInflictor());
+
+	// Crash guard: if inflictor is somehow NULL, bail out immediately.
+	// The tracer section further below also dereferences GetInflictor()
+	// and would crash without this early return.
+	if (!subInfo.GetInflictor())
+	{
+		Assert(subInfo.GetInflictor());
+		return;
+	}
+
+	// Default attacker is the inflictor
+	if (subInfo.GetAttacker() == NULL)
+		subInfo.SetAttacker(subInfo.GetInflictor());
+
+	// --------------------------------------------------
+	//  Get direction vectors for spread
+	// --------------------------------------------------
+	Vector vecUp = Vector(0, 0, 1);
+	Vector vecRight;
+	CrossProduct(vecDirShooting, vecUp, vecRight);
+	CrossProduct(vecDirShooting, -vecRight, vecUp);
+
+#ifndef CLIENT_DLL
+	ClearMultiDamage();
+#endif
+
+	Vector vecSpreadMod = vecSpread;
+	// pWeapon is NULL when the inflictor is not a CBaseTFCombatWeapon
+	// (e.g. alien projectiles). Guard to prevent a null-deref crash.
+	if (pWeapon)
+	{
+		CTFPlayer* player = ToTFPlayer(pWeapon->GetOwner());
+		if (player != nullptr && (player->GetFlags() & FL_DUCKING))
+		{
+			vecSpreadMod *= 0.25;
+		}
+	}
+
+	int seed = 0;
+
+	for (int iShot = 0; iShot < cShots; iShot++)
+	{
+		// get circular gaussian spread
+		float x, y, z;
+
+		do
+		{
+			float x1, x2, y1, y2;
+
+			// Note the additional seed because otherwise we get the same set of random #'s and will get stuck
+			//  in an infinite loop here potentially
+			// FIXME:  Can we use a gaussian random # function instead?  ywb
+			if (CBaseEntity::GetPredictionRandomSeed() != -1)
+			{
+				x1 = SharedRandomFloat("randshot", -0.5f, 0.5f, ++seed);
+				x2 = SharedRandomFloat("randshot", -0.5f, 0.5f, ++seed);
+				y1 = SharedRandomFloat("randshot", -0.5f, 0.5f, ++seed);
+				y2 = SharedRandomFloat("randshot", -0.5f, 0.5f, ++seed);
+			}
+			else
+			{
+				x1 = RandomFloat(-0.5, 0.5);
+				x2 = RandomFloat(-0.5, 0.5);
+				y1 = RandomFloat(-0.5, 0.5);
+				y2 = RandomFloat(-0.5, 0.5);
+			}
+
+			x = x1 + x2;
+			y = y1 + y2;
+
+			z = x * x + y * y;
+		} while (z > 1);
+
+		Vector vecDir = vecDirShooting + x * vecSpreadMod.x * vecRight + y * vecSpreadMod.y * vecUp;
+		Vector vecEnd = vecSrc + vecDir * flDistance;
+
+		// Try the trace
+		WeaponTraceLine(vecSrc, vecEnd, MASK_SHOT, subInfo.GetInflictor(), subInfo.GetDamageType(), &tr);
+
+		tracer = false;
+		if (iTracerFreq != 0 && (tracerCount++ % iTracerFreq) == 0)
+		{
+			Vector vecTracerSrc;
+
+			// adjust tracer position for player
+			if (subInfo.GetInflictor()->IsPlayer())
+			{
+				Vector forward, right;
+				CBasePlayer* pPlayer = ToBasePlayer(subInfo.GetInflictor());
+				pPlayer->EyeVectors(&forward, &right, NULL);
+				vecTracerSrc = vecSrc + Vector(0, 0, -4) + right * 2 + forward * 16;
+			}
+			else
+			{
+				vecTracerSrc = vecSrc;
+			}
+
+			if (iTracerFreq != 1)         // guns that always trace also always decal
+				tracer = true;
+
+			if (sCustomTracer)
+				UTIL_Tracer(vecTracerSrc, tr.endpos, subInfo.GetInflictor()->entindex(), TRACER_DONT_USE_ATTACHMENT, 0, false, (char*)sCustomTracer);
+			else
+				UTIL_Tracer(vecTracerSrc, tr.endpos, subInfo.GetInflictor()->entindex());
+		}
+
+		// do damage, paint decals
+		if (tr.fraction != 1.0)
+		{
+			CBaseEntity* pEntity = tr.m_pEnt;
+
+			// NOTE: If we want to know more than whether or not the entity can actually be hurt
+			//               for the purposes of impact effects, the client needs to know a lot more.
+			bool bTargetCouldBeHurt = false;
+			if (pEntity->m_takedamage)
+			{
+				if (!pEntity->InSameTeam(subInfo.GetInflictor()))
+				{
+					bTargetCouldBeHurt = true;
+				}
+
+#ifndef CLIENT_DLL
+				subInfo.SetDamagePosition(vecSrc);
+				// Hit the target 
+				pEntity->DispatchTraceAttack(subInfo, vecDir, &tr);
+#endif
+			}
+
+			// No decal if we hit a shield
+			if (pEntity->GetCollisionGroup() != TFCOLLISION_GROUP_SHIELD)
+				WeaponImpact(&tr, vecDir, bTargetCouldBeHurt, pEntity, subInfo.GetDamageType());
+		}
+
+		if (pWeapon)
+			pWeapon->BulletWasFired(vecSrc, tr.endpos);
+	}
+
+	// Apply any damage we've stacked up
+#ifndef CLIENT_DLL
+	ApplyMultiDamage();
+#endif
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Send the appropriate weapon impact
+//-----------------------------------------------------------------------------
+void CTFGameRules::WeaponImpact(trace_t* tr, Vector vecDir, bool bHurt, CBaseEntity* pEntity, int iDamageType)
+{
+	// If we hit a combat shield, play the hit effect
+	if (iDamageType & (DMG_PLASMA | DMG_ENERGYBEAM))
+	{
+		if (bHurt)
+		{
+			Assert(pEntity);
+			bool bHitHandheldShield = (pEntity->IsPlayer() && ((CTFPlayer*)pEntity)->IsHittingShield(vecDir, NULL));
+			if (bHitHandheldShield)
+				UTIL_ImpactTrace(tr, iDamageType, "PlasmaShield");
+			else
+			{
+				// Client waits for server version 
+#ifndef CLIENT_DLL
+								// Make sure the server sends to us, even though we're predicting
+				CDisablePredictionFiltering dpf;
+				UTIL_ImpactTrace(tr, iDamageType, "PlasmaHurt");
+#endif
+			}
+		}
+		else
+			UTIL_ImpactTrace(tr, iDamageType, "PlasmaUnhurt");
+	}
+	else
+	{
+		if (bHurt)
+		{
+			Assert(pEntity);
+			bool bHitHandheldShield = (pEntity->IsPlayer() && ((CTFPlayer*)pEntity)->IsHittingShield(vecDir, NULL));
+			if (bHitHandheldShield)
+			{
+				UTIL_ImpactTrace(tr, iDamageType, "ImpactShield");
+			}
+			else
+			{
+				// Client waits for server version 
+#ifndef CLIENT_DLL
+								// Make sure the server sends to us, even though we're predicting
+				CDisablePredictionFiltering dpf;
+				UTIL_ImpactTrace(tr, iDamageType, "Impact");
+#endif
+			}
+		}
+		else
+			UTIL_ImpactTrace(tr, iDamageType, "ImpactUnhurt");
+	}
+}
+
+
+*/
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------

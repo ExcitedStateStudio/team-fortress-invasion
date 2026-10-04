@@ -195,7 +195,7 @@ void CTFPlayerModelPanel::ApplySettings( KeyValues *inResourceData )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CTFPlayerModelPanel::SetToPlayerClass( int iClass, bool bForceRefresh /*= false*/, const char *pszPlayerModelOverride /*= NULL*/, bool bOverrideUsesClassAnimations /*= false*/ )
+void CTFPlayerModelPanel::SetToPlayerClass( int iClass, bool bForceRefresh /*= false*/, const char *pszPlayerModelOverride /*= NULL*/ )
 {
 	if ( !m_strPlayerModelOverride.IsEqual_CaseInsensitive( pszPlayerModelOverride ) )
 	{
@@ -219,15 +219,11 @@ void CTFPlayerModelPanel::SetToPlayerClass( int iClass, bool bForceRefresh /*= f
 		if ( !m_strPlayerModelOverride.IsEmpty() )
 		{
 			SetMDL( m_strPlayerModelOverride.Get() );
-			if ( bOverrideUsesClassAnimations )
-			{
-				HoldFirstValidItem( true );
-			}
 		}
 		else
 		{
 			TFPlayerClassData_t *pData = GetPlayerClassData( m_iCurrentClassIndex );
-			SetMDL( pData->GetModelName() );
+			SetMDL(pData->GetModelNameForTeam(m_iTeam));
 			HoldFirstValidItem();
 		}
 
@@ -251,7 +247,7 @@ void CTFPlayerModelPanel::SetToPlayerClass( int iClass, bool bForceRefresh /*= f
 
 	InitPhonemeMappings();
 
-	SetTeam( TF_TEAM_RED );
+	SetTeam(m_iTeam);
 
 	m_nBody = 0;
 }
@@ -259,7 +255,7 @@ void CTFPlayerModelPanel::SetToPlayerClass( int iClass, bool bForceRefresh /*= f
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CTFPlayerModelPanel::HoldFirstValidItem( bool bPreserveModelOverride /*= false*/ )
+void CTFPlayerModelPanel::HoldFirstValidItem( void )
 {
 	RemoveAdditionalModels();
 
@@ -287,7 +283,7 @@ void CTFPlayerModelPanel::HoldFirstValidItem( bool bPreserveModelOverride /*= fa
 
 	if ( iDesiredSlot != -1 )
 	{
-		UpdateHeldItem( iDesiredSlot, bPreserveModelOverride );
+		UpdateHeldItem( iDesiredSlot );
 		return;
 	}
 
@@ -301,19 +297,19 @@ void CTFPlayerModelPanel::HoldFirstValidItem( bool bPreserveModelOverride /*= fa
 
 	if ( pItem && pItem->IsValid() )
 	{
-		SwitchHeldItemTo( pItem, bPreserveModelOverride );
+		SwitchHeldItemTo( pItem );
 	}
 }
 
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-bool CTFPlayerModelPanel::HoldItemInSlot( int iSlot, bool bPreserveModelOverride /*= false*/ )
+bool CTFPlayerModelPanel::HoldItemInSlot( int iSlot )
 {
 	if ( m_iCurrentClassIndex == TF_CLASS_UNDEFINED )
 		return false;
 
-	return UpdateHeldItem( iSlot, bPreserveModelOverride );
+	return UpdateHeldItem( iSlot );
 }
 
 //-----------------------------------------------------------------------------
@@ -355,7 +351,7 @@ bool CTFPlayerModelPanel::HoldItem( int iItemNumber )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-bool CTFPlayerModelPanel::UpdateHeldItem( int iDesiredSlot, bool bPreserveModelOverride /*= false*/ )
+bool CTFPlayerModelPanel::UpdateHeldItem( int iDesiredSlot )
 {
 	m_pHeldItem = NULL;
 
@@ -367,7 +363,7 @@ bool CTFPlayerModelPanel::UpdateHeldItem( int iDesiredSlot, bool bPreserveModelO
 		// Also ignore requests to equip non-wearables that are never actively equipped
 		if ( bIsTauntItem || ( !pItem->GetStaticData()->IsAWearable() && pItem->GetAnimationSlot() != -2 ) )
 		{
-			SwitchHeldItemTo( pItem, bPreserveModelOverride );
+			SwitchHeldItemTo( pItem );
 			return true;
 		}
 	}
@@ -375,12 +371,12 @@ bool CTFPlayerModelPanel::UpdateHeldItem( int iDesiredSlot, bool bPreserveModelO
 	// If we were trying to switch to a new item, and it's not valid, stick to our current
 	if ( iDesiredSlot != m_iCurrentSlotIndex )
 	{
-		UpdateHeldItem( m_iCurrentSlotIndex, bPreserveModelOverride );
+		UpdateHeldItem( m_iCurrentSlotIndex );
 		return false;
 	}
 
 	// We were trying to stay on the current weapon, and it's not valid. Find anything.
-	HoldFirstValidItem( bPreserveModelOverride );
+	HoldFirstValidItem();
 	return false;
 }
 
@@ -518,7 +514,7 @@ void CTFPlayerModelPanel::FireEvent( const char *pszEventName, const char *pszEv
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CTFPlayerModelPanel::SwitchHeldItemTo( CEconItemView *pItem, bool bPreserveModelOverride /*= false*/ )
+void CTFPlayerModelPanel::SwitchHeldItemTo( CEconItemView *pItem )
 {
 	m_nBody = 0;
 
@@ -536,7 +532,7 @@ void CTFPlayerModelPanel::SwitchHeldItemTo( CEconItemView *pItem, bool bPreserve
 		}
 		else
 		{
-			SetToPlayerClass( m_iCurrentClassIndex, false, bPreserveModelOverride ? m_strPlayerModelOverride.Get() : NULL, bPreserveModelOverride );
+			SetToPlayerClass( m_iCurrentClassIndex );
 		}
 	}
 
@@ -1235,13 +1231,25 @@ void CTFPlayerModelPanel::OnModelLoadComplete( const model_t *pModel )
 	}
 }
 
-void CTFPlayerModelPanel::SetTeam( int iTeam )
+void CTFPlayerModelPanel::SetTeam(int iTeam)
 {
+	if (m_iTeam == iTeam)
+		return;
+
 	m_iTeam = iTeam;
+
+
+	if (IsValidTFPlayerClass(m_iCurrentClassIndex) && m_strPlayerModelOverride.IsEmpty())
+	{
+		TFPlayerClassData_t* pData = GetPlayerClassData(m_iCurrentClassIndex);
+		if (pData && pData->m_bUseTeamModels)
+		{
+			SetMDL(pData->GetModelNameForTeam(m_iTeam));
+		}
+	}
 
 	UpdatePreviewVisuals();
 }
-
 void CTFPlayerModelPanel::UpdatePreviewVisuals()
 {
 	// Assume skin will be chosen based only on the preview team

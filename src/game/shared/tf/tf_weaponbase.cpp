@@ -666,7 +666,8 @@ const char *CTFWeaponBase::GetViewModel( int iViewModel ) const
 	if ( pPlayer && pItem->IsValid() && pItem->GetStaticData()->ShouldAttachToHands() )
 	{
 		// Should always be valid, because players without classes shouldn't be carrying items
-		const char *pszHandModel = pPlayer->GetPlayerClass()->GetHandModelName( iHandModelIndex );
+		const char* pszHandModel = pPlayer->GetPlayerClass()->GetHandModelNameForTeam(
+			pPlayer->GetTeamNumber(), iHandModelIndex);
 		Assert( pszHandModel );
 
 		return pszHandModel;
@@ -1115,22 +1116,6 @@ void CTFWeaponBase::Drop( const Vector &vecVelocity )
 		{
 			pPlayer->StopHintTimer( m_iAltFireHint );
 		}
-	}
-#endif
-
-#ifndef CLIENT_DLL
-	// For disguise weapons specifically, the viewmodel-only extra wearable
-	// (e.g. botkiller medigun head) must be removed before BaseClass::Drop
-	// clears OwnerEntity — otherwise on disguise-weapon swap it orphans on
-	// the spy's viewmodel and accumulates one per swap. The world-model
-	// extra (e.g. soldier banner) is intentionally NOT removed here so
-	// it remains visible across disguise-weapon swaps within the same
-	// disguise; We cap Wearables during assingment
-	// RemoveDisguiseWearables sweeps it up at full disguise removal which prevents the leak.
-	if ( m_bDisguiseWeapon && m_hExtraWearableViewModel )
-	{
-		m_hExtraWearableViewModel->RemoveFrom( GetOwnerEntity() );
-		m_hExtraWearableViewModel = NULL;
 	}
 #endif
 
@@ -3540,13 +3525,13 @@ void CTFWeaponBase::OnDataChanged( DataUpdateType_t type )
 //-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
-void CTFWeaponBase::FireGameEvent( IGameEvent *event )
+void CTFWeaponBase::FireGameEvent(IGameEvent* event)
 {
-	// If we were the active weapon, we need to update our visibility 
-	// because we may switch visibility due to Spy disguises.
-	const char *pszEventName = event->GetName();
-	if ( Q_strcmp( pszEventName, "localplayer_changeteam" ) == 0 )
+	const char* pszEventName = event->GetName();
+	if (Q_strcmp(pszEventName, "localplayer_changeteam") == 0)
 	{
+	
+		UpdateHands();
 		UpdateVisibility();
 	}
 }

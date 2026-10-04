@@ -1,4 +1,4 @@
-//========= Copyright Valve Corporation, All rights reserved. ============//
+﻿//========= Copyright Valve Corporation, All rights reserved. ============//
 //
 // Purpose: 
 //
@@ -102,13 +102,30 @@
 
 #include "tf_wearable_weapons.h"
 #include "tf_weapon_bonesaw.h"
+#ifdef GAME_DLL
+#include "tf_soldier_commando.h"
+#endif
+#include "../../server/base_scriptweapon.h"
 
 static ConVar tf_demoman_charge_frametime_scaling( "tf_demoman_charge_frametime_scaling", "1", FCVAR_REPLICATED | FCVAR_CHEAT, "When enabled, scale yaw limiting based on client performance (frametime)." );
 static const float YAW_CAP_SCALE_MIN = 0.2f;
 static const float YAW_CAP_SCALE_MAX = 2.f;
 
+
+
+ConVar tf_sc_bullrush_anim_speed("tf_sc_bullrush_anim_speed", "2.0", FCVAR_REPLICATED | FCVAR_NOTIFY,
+	"Множитель скорости анимации во время рывка коммандо");
+
 ConVar tf_halloween_kart_boost_recharge( "tf_halloween_kart_boost_recharge", "5.0f", FCVAR_REPLICATED | FCVAR_CHEAT );
 ConVar tf_halloween_kart_boost_duration( "tf_halloween_kart_boost_duration", "1.5f", FCVAR_REPLICATED | FCVAR_CHEAT );
+
+ConVar tf_sc_bullrush_speed_mult("tf_sc_bullrush_speed_mult", "2.0",
+	FCVAR_REPLICATED | FCVAR_NOTIFY,
+	"Множитель скорости во время рывка коммандо");
+
+ConVar tf_sc_adrenaline_speed_mult("tf_sc_adrenaline_speed_mult", "1.4",
+	FCVAR_REPLICATED | FCVAR_NOTIFY,
+	"Множитель скорости во время адреналина/боевого клича");
 
 ConVar tf_scout_air_dash_count( "tf_scout_air_dash_count", "1", FCVAR_REPLICATED | FCVAR_CHEAT | FCVAR_DEVELOPMENTONLY );
 
@@ -123,6 +140,8 @@ ConVar tf_invuln_time( "tf_invuln_time", "1.0", FCVAR_DEVELOPMENTONLY | FCVAR_RE
 extern ConVar tf_player_movement_restart_freeze;
 extern ConVar mp_tournament_readymode_countdown;
 extern ConVar tf_max_charge_speed;
+
+
 
 ConVar tf_always_loser( "tf_always_loser", "0", FCVAR_CHEAT | FCVAR_REPLICATED, "Force loserstate to true." );
 
@@ -3870,6 +3889,11 @@ void CTFPlayerShared::OnRemoveMadMilk( void )
 //-----------------------------------------------------------------------------
 CTFPlayerShared::taunt_particle_state_t CTFPlayerShared::GetClientTauntParticleDesiredState() const
 {
+	if (m_pOuter && m_pOuter->IsPlayerClass(TF_CLASS_SOLDIER))
+	{
+		return taunt_particle_state_t(NULL, 0.0f);
+	}
+
 	const itemid_t unTauntSourceItemID = GetTauntSourceItemID();
 	if ( unTauntSourceItemID != INVALID_ITEM_ID )
 	{
@@ -8316,8 +8340,6 @@ void CTFPlayerShared::CompleteDisguise( void )
 	m_pOuter->UpdateModel();
 	m_pOuter->ClearExpression();
 
-	RemoveDisguiseWeapon();
-
 	FindDisguiseTarget();
 
 	if ( GetDisguiseTarget() )
@@ -8526,25 +8548,8 @@ void CTFPlayerShared::DetermineDisguiseWeapon( bool bForcePrimary )
 			m_hDisguiseWeapon->m_iState = WEAPON_IS_ACTIVE;
 			m_hDisguiseWeapon->m_bDisguiseWeapon = true;
 			m_hDisguiseWeapon->SetContextThink( &CTFWeaponBase::DisguiseWeaponThink, gpGlobals->curtime + 0.5, "DisguiseWeaponThink" );
-			m_hDisguiseWeapon->RemoveExtraWearables();
 
-			// Cap accumulated disguise wearables. Each disguise-weapon swap
-			// intentionally orphans the prior weapon's world extras (so banners
-			// etc. stay visible across swaps); skip recreation once we're at
-			// the cap so they can't grow unbounded under rapid cycling.
-			// fully cleaned up after disguise removal.
-			const int kMaxDisguiseWearables = 5;
-			int nDisguiseWearableCount = 0;
-			for ( int i = 0; i < m_pOuter->GetNumWearables(); ++i )
-			{
-				CTFWearable *pWearable = dynamic_cast< CTFWearable * >( m_pOuter->GetWearable( i ) );
-				if ( pWearable && pWearable->IsDisguiseWearable() )
-					nDisguiseWearableCount++;
-			}
-			if ( nDisguiseWearableCount < kMaxDisguiseWearables )
-			{
-				m_hDisguiseWeapon->UpdateExtraWearables();
-			}
+			m_hDisguiseWeapon->UpdateExtraWearables();
 
 			// Ammo/clip state is displayed to attached medics
 			m_iDisguiseAmmo = 0;
@@ -11143,15 +11148,44 @@ void CTFPlayer::TeamFortress_SetSpeed()
 	}
 #endif
 
-	const float fMaxSpeed = TeamFortress_CalculateMaxSpeed();
+	float fMaxSpeed = TeamFortress_CalculateMaxSpeed();
+
+	if (IsPlayerClass(TF_CLASS_SOLDIER))
+	{
+		static float s_flLogTFS = 0.f;
+		if (gpGlobals->curtime > s_flLogTFS)
+		{
+			s_flLogTFS = gpGlobals->curtime + 0.5f;
+			
+		}
+		if (m_bBullRushActive)
+		{
+			fMaxSpeed *= tf_sc_bullrush_speed_mult.GetFloat();     
+		}
+		else if (m_bAdrenalineActive)                            
+		{
+			fMaxSpeed *= Max(tf_sc_adrenaline_speed_mult.GetFloat(), 0.01f);
+		}
+		static float s_flLogTFS2 = 0.f;
+		if (gpGlobals->curtime > s_flLogTFS2)
+		{
+			s_flLogTFS2 = gpGlobals->curtime + 0.5f;
+			
+		}
+	}
+
 
 	// Set the speed
 	SetMaxSpeed( fMaxSpeed );
 
-	if ( fMaxSpeed <= 0.0f )
+
+
+	if (fMaxSpeed <= 0.0f)
 	{
-		SetAbsVelocity( vec3_origin );
+		SetAbsVelocity(vec3_origin);
 	}
+	
+	
 
 #ifdef GAME_DLL
 	// Anyone that's watching our speed should know that our speed changed so they can
@@ -11763,6 +11797,37 @@ void CTFPlayer::SelectItem( const char *pstr, int iSubType /*= 0*/ )
 
 	if (!pstr)
 		return;
+
+	if (!Q_stricmp(pstr, "slot5"))
+	{
+
+		CBaseCombatWeapon* pWpn = NULL;
+		for (int i = 0; i < MAX_WEAPONS; i++)
+		{
+			CBaseCombatWeapon* pCandidate = GetWeapon(i);
+			if (pCandidate && pCandidate->GetSlot() == SCRIPT_WEAPON_SLOT)
+			{
+				pWpn = pCandidate;
+				break;
+			}
+		}
+
+		if (!pWpn)
+			return;
+
+		if (GetObserverMode() != OBS_MODE_NONE)
+			return;
+
+		if (!Weapon_ShouldSelectItem(pWpn))
+			return;
+
+		if (!Weapon_CanSwitchTo(pWpn))
+			return;
+
+		ResetAutoaim();
+		Weapon_Switch(pWpn);
+		return;
+	}
 
 	CBaseCombatWeapon *pItem = Weapon_OwnsThisType( pstr, iSubType );
 

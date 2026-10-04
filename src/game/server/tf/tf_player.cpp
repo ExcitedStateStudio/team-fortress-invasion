@@ -1,4 +1,4 @@
-//========= Copyright Valve Corporation, All rights reserved. ============//
+﻿//========= Copyright Valve Corporation, All rights reserved. ============//
 //
 // Purpose:		Player for HL1.
 //
@@ -6,6 +6,7 @@
 //=============================================================================
 
 #include "cbase.h"
+
 #include "tf_player.h"
 #include "tf_gamerules.h"
 #include "tf_gamestats.h"
@@ -19,6 +20,7 @@
 #include "tf_viewmodel.h"
 #include "tf_item.h"
 #include "in_buttons.h"
+#include "tf_classdata.h"
 #include "entity_capture_flag.h"
 #include "effect_dispatch_data.h"
 #include "te_effect_dispatch.h"
@@ -41,6 +43,7 @@
 #include "tf_weapon_sniperrifle.h"
 #include "tf_weapon_minigun.h"
 #include "tf_weapon_fists.h"
+#include "tf_soldier_commando.h"
 #include "tf_weapon_shotgun.h"
 #include "tf_weapon_lunchbox.h"
 #include "tf_weapon_knife.h"
@@ -139,10 +142,13 @@
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
+#include <invasion/weapon_twohandedcontainer.h>
 
 #pragma warning( disable: 4355 ) // disables ' 'this' : used in base member initializer list'
 
 ConVar sv_motd_unload_on_dismissal( "sv_motd_unload_on_dismissal", "0", 0, "If enabled, the MOTD contents will be unloaded when the player closes the MOTD." );
+
+//Commando's adrenaline
 
 #define DAMAGE_FORCE_SCALE_SELF				9
 #define SCOUT_ADD_BIRD_ON_GIB_CHANCE		5
@@ -644,7 +650,7 @@ BEGIN_ENT_SCRIPTDESC( CTFPlayer, CBaseMultiplayerPlayer , "Team Fortress 2 Playe
 	DEFINE_SCRIPTFUNC_NAMED( ScriptResetScores, "ResetScores", "" )
 	DEFINE_SCRIPTFUNC_NAMED( ScriptIsParachuteEquipped, "IsParachuteEquipped", "" )
 
-	DEFINE_SCRIPTFUNC( GetCurrency, "Get player's cash for game modes with upgrades, ie. MvM" )
+	DEFINE_SCRIPTFUNC( GetCurrency, "Get player's cash for game modes with upgrades, ie. MvM" ) 
 	DEFINE_SCRIPTFUNC( SetCurrency, "Set player's cash for game modes with upgrades, ie. MvM" )
 	DEFINE_SCRIPTFUNC( AddCurrency, "Kaching! Give the player some cash for game modes with upgrades, ie. MvM" )
 	DEFINE_SCRIPTFUNC( RemoveCurrency, "Take away money from a player for reasons such as ie. spending." )
@@ -782,7 +788,8 @@ IMPLEMENT_SERVERCLASS_ST( CTFPlayer, DT_TFPlayer )
 	SendPropExclude( "DT_BaseFlex", "m_flexWeight" ),
 	SendPropExclude( "DT_BaseFlex", "m_blinktoggle" ),
 	SendPropExclude( "DT_BaseFlex", "m_viewtarget" ),
-
+	SendPropBool(SENDINFO(m_bBullRushActive)),
+	
 	SendPropBool(SENDINFO(m_bSaveMeParity)),
 	SendPropBool(SENDINFO(m_bIsMiniBoss)),
 	SendPropBool(SENDINFO(m_bIsABot)),
@@ -934,11 +941,82 @@ static void HandleCoachCommand( CTFPlayer *pPlayer, eCoachCommand command )
 };
 
 //-----------------------------------------------------------------------------
+// Purpose: Check to see if the shot is blocked by the player's handheld shield
+//-----------------------------------------------------------------------------
+bool CTFPlayer::IsHittingShield(const Vector& vecVelocity, float* flDamage)
+{
+	if (!IsParrying() && !IsBlocking())
+		return false;
+
+	Vector2D vecDelta = vecVelocity.AsVector2D();
+	Vector2DNormalize(vecDelta);
+
+	Vector forward;
+	AngleVectors(GetLocalAngles(), &forward);
+
+	Vector2DNormalize(forward.AsVector2D());
+
+	float flDot = DotProduct2D(vecDelta, forward.AsVector2D());
+
+	// This gives us a little more than a 90 degree protection angle
+	if (flDot < -0.67f)
+	{
+		// We've hit the players handheld shield, see if the shield can do anything about it
+		if (flDamage && GetCombatShield())
+		{
+			// Return true if the shield blocked it all
+			*flDamage = GetCombatShield()->AttemptToBlock(*flDamage);
+			return (!(*flDamage));
+		}
+
+		return true;
+	}
+
+	return false;
+}
+
+CWeaponCombatShield* CTFPlayer::GetCombatShield(void)
+{
+	if (!m_hWeaponCombatShield)
+	{
+		if (GetTeamNumber() == TEAM_ALIENS)
+		{
+			m_hWeaponCombatShield = static_cast<CWeaponCombatShield*>(Weapon_OwnsThisType("weapon_combat_shield_alien"));
+#ifndef CLIENT_DLL
+			if (!m_hWeaponCombatShield)
+				m_hWeaponCombatShield = static_cast<CWeaponCombatShield*>(GiveNamedItem("weapon_combat_shield_alien"));
+#endif
+		}
+		else
+		{
+			m_hWeaponCombatShield = static_cast<CWeaponCombatShield*>(Weapon_OwnsThisType("weapon_combat_shield"));
+#ifndef CLIENT_DLL
+			if (!m_hWeaponCombatShield)
+				m_hWeaponCombatShield = static_cast<CWeaponCombatShield*>(GiveNamedItem("weapon_combat_shield"));
+#endif
+		}
+	}
+
+	return m_hWeaponCombatShield;
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
 CTFPlayer::CTFPlayer() 
 {
 	m_pAttributes = this;
+	m_bBullRushActive = false;
+	//Human commando
+	m_nCustomAnimActivity = ACT_INVALID;
+	m_nCustomAnimSequence = -1;
+	m_flNextIdleSwitch = 0.f;
+	//Dynamic torso
+	m_flCustomBodyYaw = 0.f;
+	m_flCustomBodyPitch = 0.f;
+	//Commando
+	m_flAdrenalineEndTime = 0.f;
+	m_flAdrenalineSpeedMult = 1.f;
 
 	m_PlayerAnimState = CreateTFPlayerAnimState( this );
 
@@ -1009,7 +1087,7 @@ CTFPlayer::CTFPlayer()
 	m_iHealthBefore = 0;
 
 	m_iTeamChanges = 0;
-	m_iClassChanges = 0;
+	m_iClassChanges = 0; 
 
 	m_hReviveMarker = NULL;
 
@@ -1771,6 +1849,14 @@ void CTFPlayer::TFPlayerThink()
 	}
 #endif
 */
+	//Commando
+	if (IsPlayerClass(TF_CLASS_SOLDIER))
+	{
+		CSoldierCommando* pSC = GetSoldierCommando(this);
+		if (pSC)
+			pSC->Think();
+	}
+
 
 	SetContextThink( &CTFPlayer::TFPlayerThink, gpGlobals->curtime, "TFPlayerThink" );
 	m_flLastThinkTime = gpGlobals->curtime;
@@ -1865,7 +1951,7 @@ void CTFPlayer::RegenThink( void )
 		if ( GetHealth() < GetMaxHealth() )
 		{
 			int nHealedAmount = TakeHealth( nHealAmount, DMG_GENERIC | DMG_IGNORE_DEBUFFS );
-			if ( nHealedAmount > 0 )
+			if ( nHealedAmount > 0 ) 
 			{
 				IGameEvent *event = gameeventmanager->CreateEvent( "player_healed" );
 				if ( event )
@@ -2672,6 +2758,48 @@ void CTFPlayer::CancelEurekaTeleport()
 	m_teleportHomeFlashTimer.Invalidate();
 }
 
+
+static void UpdateCustomTeamModelAnimation(CTFPlayer* pPlayer)
+{
+	if (!pPlayer || !pPlayer->IsAlive())
+		return;
+
+	Activity desiredActivity = ACT_MP_STAND_IDLE;
+	float flSpeedSqr = pPlayer->GetAbsVelocity().Length2DSqr();
+
+	if (pPlayer->GetWaterLevel() >= WL_Eyes)
+	{
+		desiredActivity = ACT_MP_SWIM;
+	}
+	else if (!(pPlayer->GetFlags() & FL_ONGROUND))
+	{
+		desiredActivity = ACT_MP_JUMP_FLOAT;
+	}
+	else if (pPlayer->GetFlags() & FL_DUCKING)
+	{
+		desiredActivity = (flSpeedSqr > 100.0f) ? ACT_MP_CROUCHWALK : ACT_MP_CROUCH_IDLE;
+	}
+	else if (flSpeedSqr > 100.0f)
+	{
+		float flMaxSpeed = pPlayer->GetPlayerClass()->GetMaxSpeed();
+		desiredActivity = (flMaxSpeed > 1.0f && flSpeedSqr > Square(flMaxSpeed * 0.55f))
+			? ACT_MP_RUN : ACT_MP_WALK;
+	}
+
+	int nDesiredSequence = pPlayer->SelectWeightedSequence(desiredActivity);
+	if (nDesiredSequence == ACTIVITY_NOT_AVAILABLE)
+		nDesiredSequence = pPlayer->SelectWeightedSequence(ACT_MP_STAND_IDLE);
+
+	if (nDesiredSequence == ACTIVITY_NOT_AVAILABLE)
+		return;
+
+	if (pPlayer->GetSequence() != nDesiredSequence)
+	{
+		pPlayer->SetSequence(nDesiredSequence);
+		pPlayer->SetCycle(0.0f);
+		pPlayer->ResetSequenceInfo();
+	}
+}
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
@@ -2681,34 +2809,157 @@ void CTFPlayer::PostThink()
 
 	QAngle angles = GetLocalAngles();
 	angles[PITCH] = 0;
-	SetLocalAngles( angles );
-	
+	SetLocalAngles(angles);
+
 	// Store the eye angles pitch so the client can compute its animation state correctly.
 	m_angEyeAngles = EyeAngles();
 
-    m_PlayerAnimState->Update( m_angEyeAngles[YAW], m_angEyeAngles[PITCH] );
+	TFPlayerClassData_t* pClassData = GetPlayerClass() ? GetPlayerClassData(GetPlayerClass()->GetClassIndex()) : NULL;
+	bool bCustomModel = pClassData && pClassData->m_bUseTeamModels;
 
-	if ( m_flTauntAttackTime && m_flTauntAttackTime < gpGlobals->curtime )
+	if (!bCustomModel)
+	{
+		m_PlayerAnimState->Update(m_angEyeAngles[YAW], m_angEyeAngles[PITCH]);
+	}
+	else
+	{
+
+		Activity desiredActivity = ACT_MP_STAND_IDLE;
+		float flSpeedSqr = GetAbsVelocity().Length2DSqr();
+
+		if (GetWaterLevel() >= WL_Eyes)
+		{
+			desiredActivity = ACT_MP_SWIM;
+		}
+		else if (GetFlags() & FL_DUCKING)
+		{
+			desiredActivity = (flSpeedSqr > 100.0f) ? ACT_MP_CROUCHWALK : ACT_MP_CROUCH_IDLE;
+		}
+		else if (!(GetFlags() & FL_ONGROUND))
+		{
+			desiredActivity = ACT_MP_JUMP_FLOAT;
+		}
+		else if (flSpeedSqr > 100.0f)
+		{
+			float flMaxSpeed = GetPlayerClass()->GetMaxSpeed();
+			desiredActivity = (flMaxSpeed > 1.0f && flSpeedSqr > Square(flMaxSpeed * 0.55f))
+				? ACT_MP_RUN : ACT_MP_WALK;
+		}
+
+
+		Vector vel = GetAbsVelocity();
+		float flSpeed2D = vel.Length2D();
+
+		float flEyeYaw = m_angEyeAngles[YAW];
+		float flEyePitch = m_angEyeAngles[PITCH];
+
+		const float kBodyYawTau = 0.15f;
+		const float kBodyPitchTau = 0.10f;
+
+		float flAlphaYaw = 1.0f - expf(-gpGlobals->frametime / kBodyYawTau);
+		float flAlphaPitch = 1.0f - expf(-gpGlobals->frametime / kBodyPitchTau);
+
+		m_flCustomBodyYaw = m_flCustomBodyYaw + AngleNormalize(flEyeYaw - m_flCustomBodyYaw) * flAlphaYaw;
+		m_flCustomBodyPitch = m_flCustomBodyPitch + (flEyePitch - m_flCustomBodyPitch) * flAlphaPitch;
+
+		int iMoveYawParam = LookupPoseParameter("move_yaw");
+		int iBodyYawParam = LookupPoseParameter("body_yaw");
+		int iBodyPitchParam = LookupPoseParameter("body_pitch");
+
+		if (iMoveYawParam >= 0)
+		{
+			if (flSpeed2D > 5.0f)
+			{
+				float flVelYaw = atan2f(vel.y, vel.x) * 180.0f / M_PI;
+				float flBodyYaw = GetAbsAngles()[YAW];
+				float flMoveYaw = AngleNormalize(flVelYaw - flBodyYaw);
+				SetPoseParameter(iMoveYawParam, flMoveYaw);
+			}
+			else
+			{
+				SetPoseParameter(iMoveYawParam, 0.0f);
+			}
+		}
+
+		if (iBodyYawParam >= 0)
+		{
+			float flResidualYaw = AngleNormalize(flEyeYaw - m_flCustomBodyYaw);
+			SetPoseParameter(iBodyYawParam, clamp(flResidualYaw, -90.0f, 90.0f));
+		}
+		if (iBodyPitchParam >= 0)
+		{
+			const float kBodyPitchScale = 1.8f;  
+			const float kPitchDeadZone = 2.0f;  
+
+			float flBodyPitchTarget = m_flCustomBodyPitch * kBodyPitchScale;
+
+			if (fabsf(m_flCustomBodyPitch) < kPitchDeadZone)
+				flBodyPitchTarget = 0.0f;
+
+			
+			SetPoseParameter(iBodyPitchParam, clamp(flBodyPitchTarget, -90.0f, 90.0f));
+		}
+
+		if (desiredActivity != m_nCustomAnimActivity)
+		{
+			m_nCustomAnimActivity = desiredActivity;
+
+			int nNewSeq = ACTIVITY_NOT_AVAILABLE;
+
+			if (desiredActivity == ACT_MP_RUN)
+				nNewSeq = LookupSequence("run_all");
+			else if (desiredActivity == ACT_MP_WALK)
+				nNewSeq = LookupSequence("walk_all");
+
+			if (nNewSeq == ACTIVITY_NOT_AVAILABLE)
+				nNewSeq = SelectWeightedSequence(desiredActivity);
+
+			if (nNewSeq == ACTIVITY_NOT_AVAILABLE)
+				nNewSeq = SelectWeightedSequence(ACT_MP_STAND_IDLE);
+
+			if (nNewSeq != ACTIVITY_NOT_AVAILABLE)
+			{
+				SetSequence(nNewSeq);
+				SetCycle(0.0f);
+				ResetSequenceInfo();
+				m_nCustomAnimSequence = nNewSeq;
+			}
+
+			if (desiredActivity == ACT_MP_STAND_IDLE)
+				m_flNextIdleSwitch = gpGlobals->curtime + RandomFloat(4.0f, 8.0f);
+		}
+
+		else if (desiredActivity == ACT_MP_STAND_IDLE)
+		{
+			if (gpGlobals->curtime > m_flNextIdleSwitch)
+			{
+				m_flNextIdleSwitch = gpGlobals->curtime + RandomFloat(4.0f, 8.0f);
+				m_nCustomAnimActivity = ACT_INVALID;
+			}
+		}
+	}
+
+	if (m_flTauntAttackTime && m_flTauntAttackTime < gpGlobals->curtime)
 	{
 		m_flTauntAttackTime = 0;
 		DoTauntAttack();
 	}
 
 	// if we are coaching, then capture events for adding annotations
-	if ( m_bIsCoaching && m_hStudent )
+	if (m_bIsCoaching && m_hStudent)
 	{
-		if ( ( m_afButtonPressed & ( IN_ATTACK | IN_ATTACK2 ) ) != 0 )
+		if ((m_afButtonPressed & (IN_ATTACK | IN_ATTACK2)) != 0)
 		{
-			if ( m_afButtonPressed & IN_ATTACK )
+			if (m_afButtonPressed & IN_ATTACK)
 			{
-				HandleCoachCommand( this, kCoachCommand_Attack );
+				HandleCoachCommand(this, kCoachCommand_Attack);
 			}
-			else if ( m_afButtonPressed & IN_ATTACK2 )
+			else if (m_afButtonPressed & IN_ATTACK2)
 			{
-				HandleCoachCommand( this, kCoachCommand_Defend );
+				HandleCoachCommand(this, kCoachCommand_Defend);
 			}
 		}
-		if ( m_hStudent->GetTeamNumber() != TEAM_SPECTATOR )
+		if (m_hStudent->GetTeamNumber() != TEAM_SPECTATOR)
 		{
 			// tether coach to student--if the coach gets too far, move them toward the student
 			Vector vecTarget = m_hStudent->GetAbsOrigin();
@@ -2717,37 +2968,51 @@ void CTFPlayer::PostThink()
 			const float kInchesToMeters = 0.0254f;
 			const float kMetersToInches = 1.0f / kInchesToMeters;
 			const float kMaxDistanceToStudent = 30;
-			int distance = RoundFloatToInt( flDistance * kInchesToMeters );
-			if ( distance > kMaxDistanceToStudent )
+			int distance = RoundFloatToInt(flDistance * kInchesToMeters);
+			if (distance > kMaxDistanceToStudent)
 			{
-				VectorNormalize( vecDelta );
-				SetAbsOrigin( vecTarget + vecDelta * ( kMaxDistanceToStudent * kMetersToInches ) );
+				VectorNormalize(vecDelta);
+				SetAbsOrigin(vecTarget + vecDelta * (kMaxDistanceToStudent * kMetersToInches));
 			}
 		}
 	}
 
-	if ( TFGameRules()->IsMannVsMachineMode() )
+	if (TFGameRules()->IsMannVsMachineMode())
 	{
 		// metal is free during setup time
-		if ( TFGameRules()->IsQuickBuildTime() )
+		if (TFGameRules()->IsQuickBuildTime())
 		{
-			GiveAmmo( 1000, TF_AMMO_METAL, true );
+			GiveAmmo(1000, TF_AMMO_METAL, true);
 		}
 
 		// clamp maximum velocity to avoid sending mini-bosses into the stratosphere
-		if ( GetTeamNumber() == TF_TEAM_PVE_INVADERS )
+		if (GetTeamNumber() == TF_TEAM_PVE_INVADERS)
 		{
 			Vector ahead = GetAbsVelocity();
 			float speed = ahead.NormalizeInPlace();
 
 			const float velocityLimit = 1000.0f;
-			if ( speed > velocityLimit )
+			if (speed > velocityLimit)
 			{
 				speed = velocityLimit;
 			}
 
-			SetAbsVelocity( speed * ahead );
+			SetAbsVelocity(speed * ahead);
 		}
+	}
+
+	if (bCustomModel)
+	{
+		m_flPlaybackRate = 1.0f;
+	}
+
+	if (m_bBullRushActive)
+	{
+		m_flPlaybackRate *= tf_sc_bullrush_anim_speed.GetFloat();
+	}
+	else if (m_bAdrenalineActive)
+	{
+		m_flPlaybackRate *= 1.25f;
 	}
 
 	UpdateHalloween();
@@ -2775,10 +3040,10 @@ void CTFPlayer::PrecacheMvM()
 	PrecacheModel( "models/items/currencypack_small.mdl" );
 	PrecacheModel( "models/items/currencypack_medium.mdl" );
 	PrecacheModel( "models/items/currencypack_large.mdl" );
-
+	PrecacheModel( "models/player/alien_commando.mdl" );
+	PrecacheModel("models/player/human_commando.mdl");
+	
 	PrecacheModel( "models/bots/tw2/boss_bot/twcarrier_addon.mdl" );
-    
-	PrecacheModel( "models/player/gibs/gibs_bolt.mdl" );
 
 	PrecacheParticleSystem( "bot_impact_light" );
 	PrecacheParticleSystem( "bot_impact_heavy" );
@@ -2850,32 +3115,61 @@ void CTFPlayer::PrecacheKart()
 void CTFPlayer::PrecachePlayerModels( void )
 {
 	int i;
-	for ( i = 0; i < TF_CLASS_COUNT_ALL; i++ )
+	for (i = 0; i < TF_CLASS_COUNT_ALL; i++)
 	{
-		const char *pszModel = GetPlayerClassData( i )->m_szModelName;
-		if ( pszModel && pszModel[0] )
+		TFPlayerClassData_t* pData = GetPlayerClassData(i);
+
+
+		const char* pszModel = pData->m_szModelName;
+		if (pszModel && pszModel[0])
 		{
-			int iModel = PrecacheModel( pszModel );
-			PrecacheGibsForModel( iModel );
+			int iModel = PrecacheModel(pszModel);
+			PrecacheGibsForModel(iModel);
 		}
 
-		pszModel = GetPlayerClassData( i )->m_szHandModelName;
-		if ( pszModel && pszModel[0] )
+		
+		if (pData->m_bUseTeamModels)
 		{
-			PrecacheModel( pszModel );
+			if (pData->m_szModelNameRed[0])
+			{
+				int iModel = PrecacheModel(pData->m_szModelNameRed);
+				PrecacheGibsForModel(iModel);
+			}
+			if (pData->m_szModelNameBlue[0])
+			{
+				int iModel = PrecacheModel(pData->m_szModelNameBlue);
+				PrecacheGibsForModel(iModel);
+			}
 		}
 
-/*
+		pszModel = pData->m_szHandModelName;
+		if (pszModel && pszModel[0])
+		{
+			PrecacheModel(pszModel);
+		}
+
+		//Invasion hands system
+		if (pData->m_szHandModelNameRed[0] &&
+			Q_stricmp(pData->m_szHandModelNameRed, pData->m_szHandModelName) != 0)
+		{
+			PrecacheModel(pData->m_szHandModelNameRed);
+		}
+		if (pData->m_szHandModelNameBlue[0] &&
+			Q_stricmp(pData->m_szHandModelNameBlue, pData->m_szHandModelName) != 0)
+		{
+			PrecacheModel(pData->m_szHandModelNameBlue);
+		}
+
+		/*
 		if ( !IsX360() )
 		{
-			// Precache the hardware facial morphed models as well.
-			const char *pszHWMModel = GetPlayerClassData( i )->m_szHWMModelName;
+			const char *pszHWMModel = pData->m_szHWMModelName;
 			if ( pszHWMModel && pszHWMModel[0] )
 			{
 				PrecacheModel( pszHWMModel );
 			}
 		}
-*/
+		*/
 	}
 	
 	// Always precache the silly gibs.
@@ -3152,22 +3446,43 @@ void CTFPlayer::Precache()
 // Purpose: Allow pre-frame adjustments on the player
 //-----------------------------------------------------------------------------
 ConVar sv_runcmds( "sv_runcmds", "1" );
-void CTFPlayer::PlayerRunCommand( CUserCmd *ucmd, IMoveHelper *moveHelper )
+void CTFPlayer::PlayerRunCommand(CUserCmd* ucmd, IMoveHelper* moveHelper)
 {
 	static bool bSeenSyncError = false;
-	VPROF( "CTFPlayer::PlayerRunCommand" );
+	VPROF("CTFPlayer::PlayerRunCommand");
 
-	if ( !sv_runcmds.GetInt() )
+	if (!sv_runcmds.GetInt())
 		return;
 
-	if ( m_Shared.InCond( TF_COND_HALLOWEEN_KART ) )
+	if (IsPlayerClass(TF_CLASS_SOLDIER) && IsAlive())
 	{
-		m_Shared.CreateVehicleMove( gpGlobals->frametime, ucmd );
+		CSoldierCommando* pSC = GetSoldierCommando(this);
+		if (pSC)
+			pSC->NoteButtonState(m_nButtons, m_afButtonLast);
 	}
-	else if ( IsTaunting() || m_Shared.InCond( TF_COND_HALLOWEEN_THRILLER ) )
+
+	bool bWasBullRush = m_bBullRushActive;
+
+	if (m_bBullRushActive)
 	{
-		// For some taunts, it is critical that the player not move once they start
-		if ( !CanMoveDuringTaunt() )
+		QAngle ang = EyeAngles();
+		ang[PITCH] = 0;
+		ang[ROLL] = 0;
+		ucmd->viewangles = ang;
+		ucmd->forwardmove = 800.0f;   
+		ucmd->sidemove = 0.f;
+		ucmd->upmove = 0.f;
+		ucmd->buttons &= ~IN_JUMP;
+	}
+
+
+	if (m_Shared.InCond(TF_COND_HALLOWEEN_KART))
+	{
+		m_Shared.CreateVehicleMove(gpGlobals->frametime, ucmd);
+	}
+	else if (IsTaunting() || m_Shared.InCond(TF_COND_HALLOWEEN_THRILLER))
+	{
+		if (!CanMoveDuringTaunt())
 		{
 			ucmd->forwardmove = 0;
 			ucmd->upmove = 0;
@@ -3175,28 +3490,31 @@ void CTFPlayer::PlayerRunCommand( CUserCmd *ucmd, IMoveHelper *moveHelper )
 			ucmd->viewangles = pl.v_angle;
 		}
 
-		if ( tf_allow_taunt_switch.GetInt() == 0 && ucmd->weaponselect != 0 )
+		if (tf_allow_taunt_switch.GetInt() == 0 && ucmd->weaponselect != 0)
 		{
 			ucmd->weaponselect = 0;
-
-			// FIXME: The client will have predicted the weapon switch and have
-			// called Holster/Deploy which will make the wielded weapon
-			// invisible on their end.
 		}
 	}
 
-	BaseClass::PlayerRunCommand( ucmd, moveHelper );
+	BaseClass::PlayerRunCommand(ucmd, moveHelper);
+
+	if (bWasBullRush && m_bBullRushActive)
+	{
+		m_flForwardMove = 800.0f;  
+		m_flSideMove = 0.f;
+	}
 
 	// try to play taunt remap on input after updating user command
-	if ( IsTaunting() && m_flNextAllowTauntRemapInputTime >= 0.f && m_flNextAllowTauntRemapInputTime <= gpGlobals->curtime )
+	if (IsTaunting() && m_flNextAllowTauntRemapInputTime >= 0.f && m_flNextAllowTauntRemapInputTime <= gpGlobals->curtime)
 	{
 		float flSceneDuration = PlayTauntRemapInputScene();
-		if ( flSceneDuration > 0.f )
+		if (flSceneDuration > 0.f)
 		{
 			m_flNextAllowTauntRemapInputTime = gpGlobals->curtime + flSceneDuration;
 		}
 	}
 }
+
 
 //-----------------------------------------------------------------------------
 // Purpose: 
@@ -3565,6 +3883,17 @@ void CTFPlayer::Spawn()
 	VPROF_BUDGET( "CTFPlayer::Spawn", VPROF_BUDGETGROUP_PLAYER );
 	MDLCACHE_CRITICAL_SECTION();
 
+	m_bAdrenalineActive = false;
+	m_flAdrenalineEndTime = 0.f;
+
+
+	if (IsPlayerClass(TF_CLASS_SOLDIER))
+	{
+		CSoldierCommando* pSC = GetSoldierCommando(this);
+		if (pSC)
+			pSC->OnSpawn();
+	}
+
 	m_bIsABot = IsBot();
 
 	if ( m_bIsABot && IsBotOfType( TF_BOT_TYPE ) )
@@ -3637,7 +3966,17 @@ void CTFPlayer::Spawn()
 		// add team glows for a period of time after we respawn
 		m_Shared.AddCond( TF_COND_TEAM_GLOWS, tf_spawn_glows_duration.GetInt() );
 
-		UpdateSkin( GetTeamNumber() );
+		TFPlayerClassData_t* pClassData = GetPlayerClassData(GetPlayerClass()->GetClassIndex());
+		if (pClassData && pClassData->m_bUseTeamModels)
+		{
+		
+			m_nSkin = 0;
+			m_iLastSkin = 0;
+		}
+		else
+		{
+			UpdateSkin(GetTeamNumber());
+		}
 
 		// Prevent firing for a second so players don't blow their faces off
 		SetNextAttack( gpGlobals->curtime + 1.0 );
@@ -3944,6 +4283,109 @@ void CTFPlayer::Spawn()
 	}
 
 	SetContextThink( &CTFPlayer::PostSpawnThink, gpGlobals->curtime + 0.1f, "PostSpawnThink" );
+}
+
+static CBaseCombatWeapon* GiveWeaponBypassEcon(CTFPlayer* pPlayer, const char* pszClassname)
+{
+	if (!pPlayer || !pszClassname || !pszClassname[0])
+		return NULL;
+
+	CBaseCombatWeapon* pExisting = pPlayer->Weapon_OwnsThisType(pszClassname);
+	if (pExisting)
+		return pExisting;
+
+	Msg("GWB: creating '%s'\n", pszClassname);
+
+	CBaseEntity* pEnt = CreateEntityByName(pszClassname);
+	if (!pEnt)
+	{
+		Warning("GWB: CreateEntityByName('%s') failed\n", pszClassname);
+		return NULL;
+	}
+
+	pEnt->SetLocalOrigin(pPlayer->GetAbsOrigin());
+	pEnt->SetAbsAngles(pPlayer->GetAbsAngles());
+	pEnt->SetAbsVelocity(vec3_origin);
+
+	Msg("GWB: DispatchSpawn\n");
+	DispatchSpawn(pEnt);
+	Msg("GWB: spawned\n");
+
+	CBaseCombatWeapon* pWeapon = dynamic_cast<CBaseCombatWeapon*>(pEnt);
+	if (!pWeapon)
+	{
+		Warning("GWB: '%s' is not a weapon\n", pszClassname);
+		UTIL_Remove(pEnt);
+		return NULL;
+	}
+
+	pWeapon->SetOwner(pPlayer);
+	pWeapon->SetOwnerEntity(pPlayer);
+	pWeapon->ChangeTeam(pPlayer->GetTeamNumber());
+
+
+	Msg("GWB: Weapon_Equip\n");
+	pPlayer->Weapon_Equip(pWeapon);
+	Msg("GWB: equipped\n");
+
+	pEnt->Activate();
+	pEnt->SetTouch(NULL);
+
+	return pWeapon;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: 
+//-----------------------------------------------------------------------------
+void CTFPlayer::GiveShieldRifleBundle(void)
+{
+	Msg("GSRB: start\n");
+
+	CBaseCombatWeapon* pContainerBase = GiveWeaponBypassEcon(this, "weapon_twohandedcontainer");
+
+	CBaseCombatWeapon* pShieldBase = GiveWeaponBypassEcon(this, "weapon_combat_shield");
+	CBaseCombatWeapon* pRifleBase = GiveWeaponBypassEcon(this, "weapon_combat_plasmarifle");
+
+	CWeaponTwoHandedContainer* pContainer = dynamic_cast<CWeaponTwoHandedContainer*>(pContainerBase);
+	CBaseTFCombatWeapon* pShield = dynamic_cast<CBaseTFCombatWeapon*>(pShieldBase);
+	CBaseTFCombatWeapon* pRifle = dynamic_cast<CBaseTFCombatWeapon*>(pRifleBase);
+
+	if (!pContainer || !pShield || !pRifle)
+	{
+		Warning("GSRB: missing parts (container=%p, shield=%p, rifle=%p)\n",
+			pContainer, pShield, pRifle);
+		return;
+	}
+
+
+	Msg("GSRB: SetWeapons(rifle, shield)\n");
+	pContainer->SetWeapons(pRifle, pShield);
+
+
+	Msg("GSRB: Weapon_Switch(container)\n");
+	Weapon_Switch(pContainer);
+
+	Msg("GSRB: done\n");
+}
+
+
+CON_COMMAND_F(tf_give_shield_rifle, "Gives the calling player the shield+laserrifle bundle.", FCVAR_CHEAT)
+{
+	
+
+	CBasePlayer* pPlayer = UTIL_GetCommandClient();
+	if (!pPlayer)
+		pPlayer = UTIL_GetListenServerHost();
+
+	CTFPlayer* pTFPlayer = ToTFPlayer(pPlayer);
+	if (!pPlayer)
+	{
+		Msg("tf_give_shield_rifle: caller is not a TF player.\n");
+		return;
+	}
+
+	pTFPlayer->GiveShieldRifleBundle();
+	Msg("Gave shield+laserrifle bundle to %s.\n", pTFPlayer->GetPlayerName());
 }
 
 //-----------------------------------------------------------------------------
@@ -4548,12 +4990,24 @@ void CTFPlayer::ManageRegularWeapons( TFPlayerClassData_t *pData )
 				m_EquippedLoadoutItemIndices[i] = LOADOUT_SLOT_USE_BASE_ITEM;
 
 				// use base items in training mode
-				CEconItemView *pItem = GetLoadoutItem( iClass, i, true );
-				if ( !pItem || !pItem->IsValid() )
+				CEconItemView* pItem = GetLoadoutItem(iClass, i, true);
+				Msg("[LOADOUT] slot=%d pItem=%p valid=%d\n", i, pItem, pItem ? pItem->IsValid() : 0);
+				if (!pItem || !pItem->IsValid())
 					continue;
 
-				if ( !ItemIsAllowed( pItem ) )
+				Msg("[LOADOUT]   itemdef=%d class=%s name=%s\n",
+					pItem->GetItemDefIndex(),
+					pItem->GetStaticData()->GetItemClass() ? pItem->GetStaticData()->GetItemClass() : "(null)",
+					pItem->GetStaticData()->GetItemBaseName() ? pItem->GetStaticData()->GetItemBaseName() : "(null)");
+
+				if (!ItemIsAllowed(pItem))
+				{
+					Msg("[LOADOUT]   -- FILTERED BY ItemIsAllowed\n");
 					continue;
+				}
+
+				Msg("[LOADOUT]   -- passed, calling GiveNamedItem(%s)\n",
+					pItem->GetStaticData()->GetItemClass());
 
 				// Only do this for taunts, because other items will be caught by the dynamic model loading system. 
 				if ( IsTauntSlot( i ) )
@@ -7343,6 +7797,7 @@ bool CTFPlayer::ClientCommand( const CCommand &args )
 	else
 #endif
 
+
 	if ( FStrEq( pcmd, "jointeam" ) )
 	{
 		// don't let them spam the server with changes
@@ -7355,6 +7810,20 @@ bool CTFPlayer::ClientCommand( const CCommand &args )
 		{
 			HandleCommand_JoinTeam( args[1] );
 		}
+		return true;
+	}
+	else if (FStrEq(pcmd, "sc_adrenaline"))
+	{
+		CSoldierCommando* pSC = GetSoldierCommando(this);
+		if (pSC)
+			pSC->ActivateAdrenaline();
+		return true;
+	}
+	else if (FStrEq(pcmd, "sc_battlecry"))
+	{
+		CSoldierCommando* pSC = GetSoldierCommando(this);
+		if (pSC)
+			pSC->ActivateBattlecry();
 		return true;
 	}
 	else if ( FStrEq( pcmd, "jointeam_nomenus" ) )
@@ -9127,15 +9596,7 @@ int CTFPlayer::OnTakeDamage( const CTakeDamageInfo &inputInfo )
 				pRandomInternalOrgan->KeyValue( "origin", buf );
 				Q_snprintf( buf, sizeof( buf ), "%.10f %.10f %.10f", GetAbsAngles().x, GetAbsAngles().y, GetAbsAngles().z );
 				pRandomInternalOrgan->KeyValue( "angles", buf );
-				if ( TFGameRules()->IsMannVsMachineMode() && GetTeamNumber() == TF_TEAM_PVE_INVADERS && BloodColor() == DONT_BLEED && TFObjectiveResource()->GetMvMEventPopfileType() != MVM_EVENT_POPFILE_HALLOWEEN )
-				{
-					//robots don't have spleens....
-					pRandomInternalOrgan->KeyValue( "model", "models/player/gibs/gibs_bolt.mdl" );
-				}
-				else
-				{
-					pRandomInternalOrgan->KeyValue( "model", "models/player/gibs/random_organ.mdl" );
-				}
+				pRandomInternalOrgan->KeyValue( "model", "models/player/gibs/random_organ.mdl" );
 				pRandomInternalOrgan->KeyValue( "fademindist", "-1" );
 				pRandomInternalOrgan->KeyValue( "fademaxdist", "0" );
 				pRandomInternalOrgan->KeyValue( "fadescale", "1" );
@@ -10446,7 +10907,7 @@ void CTFPlayer::ApplyPushFromDamage( const CTakeDamageInfo &info, Vector vecDir 
 			}
 		}
 
-		if ( TFGameRules()->IsMannVsMachineMode() )
+		if ( TFGameRules()->GameModeUsesUpgrades() )
 		{
 			if ( GetTeamNumber() == TF_TEAM_PVE_INVADERS )
 			{
@@ -10743,7 +11204,7 @@ int CTFPlayer::OnTakeDamage_Alive( const CTakeDamageInfo &info )
 			{
 				int iExplosiveShot = 0;
 				CALL_ATTRIB_HOOK_INT_ON_OTHER( pTFAttacker, iExplosiveShot, explosive_sniper_shot );
-				if ( iExplosiveShot && !m_Shared.IsInvulnerable() )
+				if ( iExplosiveShot )
 				{
 					pSniper->ExplosiveHeadShot( pTFAttacker, this );
 				}
@@ -11591,6 +12052,13 @@ void CTFPlayer::Event_Killed( const CTakeDamageInfo &info )
 	if ( info.GetAttacker() && info.GetAttacker()->IsPlayer() )
 	{
 		pPlayerAttacker = ToTFPlayer( info.GetAttacker() );
+	}
+	//Somando
+	if (IsPlayerClass(TF_CLASS_SOLDIER))
+	{
+		CSoldierCommando* pSC = GetSoldierCommando(this);
+		if (pSC)
+			pSC->OnDeath();
 	}
 
 	CTFWeaponBase *pKillerWeapon = NULL;
@@ -13147,7 +13615,7 @@ void CTFPlayer::DropAmmoPackFromProjectile( CBaseEntity *pProjectile )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CTFPlayer::DropHealthPack( const CTakeDamageInfo &info, bool bEmpty )
+void CTFPlayer::DropHealthPack( const CTakeDamageInfo &info, bool bEmpty ) 
 {
 	Vector vecSrc = this->WorldSpaceCenter();
 	CHealthKitSmall *pMedKit = assert_cast<CHealthKitSmall*>( CBaseEntity::Create( "item_healthkit_small", vecSrc, vec3_angle, this ) );
@@ -13292,13 +13760,24 @@ void CTFPlayer::ClientHearVox( const char *pSentence )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CTFPlayer::UpdateModel( void )
+void CTFPlayer::UpdateModel(void)
 {
-	SetModel( GetPlayerClass()->GetModelName() );
+	TFPlayerClassData_t* pClassData = GetPlayerClassData(GetPlayerClass()->GetClassIndex());
+	if (pClassData)
+	{
+		const char* pszDesired = pClassData->GetModelNameForTeam(GetTeamNumber());
+		SetModel(pszDesired);
 
-	// Immediately reset our collision bounds - our collision bounds will be set to the model's bounds.
-	SetCollisionBounds( GetPlayerMins(), GetPlayerMaxs() );
+		// >>> DEBUG
+		//Msg("[UpdateModel] team=%d class=%s desired='%s' actual='%s' idx=%d\n",
+		//	GetTeamNumber(),
+		//	pClassData->m_szClassName,
+			//pszDesired ? pszDesired : "(null)",
+		//	GetModelName(),                      
+			//GetModelIndex());                    
+	}
 
+	SetCollisionBounds(GetPlayerMins(), GetPlayerMaxs());
 	m_PlayerAnimState->OnNewModel();
 }
 
@@ -13306,13 +13785,19 @@ void CTFPlayer::UpdateModel( void )
 // Purpose: 
 // Input  : iSkin - 
 //-----------------------------------------------------------------------------
-void CTFPlayer::UpdateSkin( int iTeam )
+void CTFPlayer::UpdateSkin(int iTeam)
 {
-	// The player's skin is team - 2.
-	int iSkin = iTeam - 2;
 
-	// Check to see if the skin actually changed.
-	if ( iSkin != m_iLastSkin )
+	TFPlayerClassData_t* pClassData = GetPlayerClassData(GetPlayerClass()->GetClassIndex());
+	if (pClassData && pClassData->m_bUseTeamModels)
+	{
+		m_nSkin = 0;
+		m_iLastSkin = 0;
+		return;
+	}
+
+	int iSkin = iTeam - 2;
+	if (iSkin != m_iLastSkin)
 	{
 		m_nSkin = iSkin;
 		m_iLastSkin = iSkin;
@@ -15166,16 +15651,7 @@ void CTFPlayer::PainSound( const CTakeDamageInfo &info )
 			TFPlayerClassData_t *pData = GetPlayerClass()->GetData();
 			if ( pData )
 			{
-				int nDeathSound = DEATH_SOUND_GENERIC;
-				if ( TFGameRules() && TFGameRules()->IsMannVsMachineMode() && GetTeamNumber() == TF_TEAM_PVE_INVADERS )
-				{
-					nDeathSound = DEATH_SOUND_GENERIC_MVM;
-					if ( IsMiniBoss() )
-					{
-						nDeathSound = DEATH_SOUND_GENERIC_GIANT_MVM;
-					}
-				}
-				EmitSound( pData->GetDeathSound( nDeathSound ) );
+				EmitSound( pData->GetDeathSound( DEATH_SOUND_GENERIC ) );
 			}
 		}
 		return;

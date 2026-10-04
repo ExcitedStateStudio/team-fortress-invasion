@@ -48,6 +48,10 @@ public:
 	char		m_szPlayerClassName[MAX_PLAYERCLASS_NAME_LENGTH];
 	char		m_szPrintName[MAX_PLAYERCLASS_NAME_LENGTH];		// localization key for print name
 	char		m_szPlayerModel[MAX_PLAYERCLASS_NAME_LENGTH];
+	//ALINES/HUMANS
+	char m_szPlayerModelRed[MAX_PLAYERCLASS_NAME_LENGTH];
+	char m_szPlayerModelBlue[MAX_PLAYERCLASS_NAME_LENGTH];
+
 	char		m_szSelectCmd[32];		//command the player can issue to switch to this class
 };
 

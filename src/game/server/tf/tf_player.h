@@ -17,6 +17,7 @@
 #include "steam/steam_gameserver.h"
 #include "ihasattributes.h"
 #include "tf_item_inventory.h"
+#include <invasion/weapon_combatshield.h>
 
 class CTFPlayer;
 class CTFTeam;
@@ -170,10 +171,19 @@ public:
 	CBaseViewModel		*GetOffHandViewModel();
 	void				SendOffHandViewModelActivity( Activity activity );
 
+
+	// Combat prototyping
+	bool	IsBlocking(void) const { return m_bIsBlocking; }
+	bool	IsParrying(void) const { return m_bIsParrying; }
+	void	SetBlocking(bool bBlocking) { m_bIsBlocking = bBlocking; }
+	void	SetParrying(bool bParrying) { m_bIsParrying = bParrying; }
+
 	virtual void		CheatImpulseCommands( int iImpulse );
 	virtual void		PlayerRunCommand( CUserCmd *ucmd, IMoveHelper *moveHelper );
 
 	virtual void		CommitSuicide( bool bExplode = false, bool bForce = false );
+	// Check for a collision....
+	//bool	IsHittingShield(const Vector& vecVelocity, float* flDamage);
 
 	// Combats
 	virtual void		TraceAttack( const CTakeDamageInfo &info, const Vector &vecDir, trace_t *ptr, CDmgAccumulator *pAccumulator );
@@ -518,10 +528,36 @@ public:
 	void	ClearWeaponFireScene( void );
 	void	FiringTalk() { SpeakWeaponFire(); }
 
-	virtual int DrawDebugTextOverlays( void );
+	//Shield
+	CWeaponCombatShield* GetCombatShield(void);
+	//Commando's adrenaline
+	void StartAdrenalineRush();
 
+	virtual int DrawDebugTextOverlays( void );
+	//Commando's bullrush
+	CNetworkVar(bool, m_bBullRushActive);
+	CNetworkVar(bool, m_bAdrenalineActive);
 	float m_flNextVoiceCommandTime;
 	int m_iVoiceSpamCounter;
+	//Adrenaline
+	float   m_flAdrenalineEndTime;
+	float   m_flAdrenalineSpeedMult;
+
+	void    GiveShieldRifleBundle(void);
+
+	inline bool IsAdrenalineActive(void) const
+	{
+		return m_flAdrenalineEndTime > gpGlobals->curtime;
+	}
+
+	// Handheld shield
+	CNetworkVar(bool, m_bIsBlocking);
+	bool	m_bIsParrying;
+	CHandle< CWeaponCombatShield > m_hWeaponCombatShield;
+	// Check for a collision....
+	bool	IsHittingShield(const Vector& vecVelocity, float* flDamage);
+	void Battlecry(void);
+	void SoldierBootThink(void);
 
 	CRateLimitingTokenBucket<CVoiceCommandBucketSizer> m_RateLimitedVoiceCommandTokenBucket;
 
@@ -1158,6 +1194,8 @@ private:
 	void				StateEnterDYING( void );
 	void				StateThinkDYING( void );
 
+
+
 	virtual bool		SetObserverMode(int mode);
 	virtual void		AttemptToExitFreezeCam( void );
 
@@ -1192,6 +1230,14 @@ private:
 
 	float					m_flHealthBuffTime;
 	int						m_iHealthBefore;
+
+	Activity m_nCustomAnimActivity;
+	int      m_nCustomAnimSequence;
+	float    m_flNextIdleSwitch;
+	//HUMAN COMMANDO
+	float m_flCustomBodyYaw;
+	float m_flCustomBodyPitch;
+
 
 	float					m_flNextRegenerateTime;
 	float					m_flNextChangeClassTime;

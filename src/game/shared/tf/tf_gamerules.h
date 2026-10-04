@@ -155,6 +155,7 @@ public:
 
 	CTFGameRulesProxy();
 
+
 	void	InputSetRedTeamRespawnWaveTime( inputdata_t &inputdata );
 	void	InputSetBlueTeamRespawnWaveTime( inputdata_t &inputdata );
 	void	InputAddRedTeamRespawnWaveTime( inputdata_t &inputdata );
@@ -309,6 +310,20 @@ public:
 
 	CTFGameRules();
 
+
+/*
+#ifdef CLIENT_DLL
+	virtual void FireBullets(const CTakeDamageInfo& info, int cShots, const Vector& vecSrc, const Vector& vecDirShooting,
+		const Vector& vecSpread, float flDistance, int iBulletType, int iTracerFreq, int firingEntID,
+		int attachmentID, const char* sCustomTracer = NULL);
+
+	// Shared implementation between client and server.
+	void WeaponTraceLine(const Vector& src, const Vector& end, unsigned int mask, CBaseEntity* pShooter, int damageType, trace_t* pTrace);
+
+	// Send the appropriate weapon impact.
+	void WeaponImpact(trace_t* tr, Vector vecDir, bool bHurt, CBaseEntity* pEntity, int iDamageType);
+#endif
+*/
 	virtual void	LevelInitPostEntity( void );
 	virtual float	GetRespawnTimeScalar( int iTeam );
 	virtual float	GetRespawnWaveMaxLength( int iTeam, bool bScaleWithNumPlayers = true );
@@ -659,6 +674,7 @@ bool IsCreepWaveMode( void ) const;
 	void PlayerReadyStatus_ResetState( void );
 	void PlayerReadyStatus_UpdatePlayerState( CTFPlayer *pTFPlayer, bool bState );
 #endif // GAME_DLL
+	
 
 	bool IsDefaultGameMode( void );		// The absence of arena, mvm, tournament mode, etc
 

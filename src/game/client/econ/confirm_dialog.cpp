@@ -795,6 +795,7 @@ CTFReviveDialog::CTFReviveDialog( const char *pTitle, const char *pText, const c
 	m_pTargetHealth->HideHealthBonusImage();
 	
 	vgui::ivgui()->AddTickSignal( GetVPanel(), 50 );
+	OnTick();
 }
 
 //-----------------------------------------------------------------------------
@@ -812,15 +813,12 @@ void CTFReviveDialog::OnTick()
 {
 	BaseClass::OnTick();
 
-	if (!m_hEntity)
-	{
-		FinishUp();
+	if ( !m_pTargetHealth )
 		return;
-	}
 
-	if (!m_pTargetHealth)
+	if ( !m_hEntity )
 		return;
-	
+
 	float flHealth = m_hEntity->GetHealth();
 	if ( flHealth != m_flPrevHealth )
 	{

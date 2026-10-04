@@ -28,10 +28,10 @@ public:
 
 	void	ApplySettings( KeyValues *inResourceData );
 
-	void	SetToPlayerClass( int iClass, bool bForceRefresh = false, const char *pszPlayerModelOverride = NULL, bool bOverrideUsesClassAnimations = false );
-	bool	HoldItemInSlot( int iSlot, bool bPreserveModelOverride = false );
+	void	SetToPlayerClass( int iClass, bool bForceRefresh = false, const char *pszPlayerModelOverride = NULL );
+	bool	HoldItemInSlot( int iSlot );
 	bool	HoldItem( int iItemNumber );
-	void	SwitchHeldItemTo( CEconItemView *pItem, bool bPreserveModelOverride = false );
+	void	SwitchHeldItemTo( CEconItemView *pItem );
 	void	EquipRequiredLoadoutSlot( int iRequiredLoadoutSlot );
 	CEconItemView	*GetHeldItem() { return m_pHeldItem; }
 
@@ -126,10 +126,10 @@ private:
 	void	InitPhonemeMappings( void );
 	void	SetupMappings( char const *pchFileRoot );
 
-	void	HoldFirstValidItem( bool bPreserveModelOverride = false );
+	void	HoldFirstValidItem( void );
 	void	EquipAllWearables( CEconItemView *pHeldItem );
 	void	EquipItem( CEconItemView *pItem );
-	bool	UpdateHeldItem( int iDesiredSlot, bool bPreserveModelOverride = false );
+	bool	UpdateHeldItem( int iDesiredSlot );
 	void	UpdateWeaponBodygroups( bool bModifyDeployedOnlyBodygroups );
 	void	UpdateHiddenBodyGroups( CEconItemView* pItem );
 	CEconItemView *GetItemInSlot( int iSlot );

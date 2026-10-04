@@ -9,6 +9,7 @@
 #pragma once
 #endif
 
+
 //-----------------------------------------------------------------------------
 // Cache structure for the TF player class data (includes citizen). 
 //-----------------------------------------------------------------------------
@@ -49,9 +50,18 @@ struct TFPlayerClassData_t
 	char		m_szModelName[TF_NAME_LENGTH];
 	char		m_szHWMModelName[TF_NAME_LENGTH];
 	char		m_szHandModelName[TF_NAME_LENGTH];
+	//Invasion
+
+	char		m_szHandModelNameRed[TF_NAME_LENGTH];    
+	char		m_szHandModelNameBlue[TF_NAME_LENGTH];  
+
 	char		m_szLocalizableName[TF_NAME_LENGTH];
 	float		m_flMaxSpeed;
 	int			m_nMaxHealth;
+	//ALIEN/HUMANS
+	char		m_szModelNameRed[TF_NAME_LENGTH];
+	char		m_szModelNameBlue[TF_NAME_LENGTH];	
+	
 	int			m_nMaxArmor;
 	int			m_aWeapons[TF_PLAYER_WEAPON_COUNT];
 	int			m_aGrenades[TF_PLAYER_GRENADE_COUNT];
@@ -60,6 +70,9 @@ struct TFPlayerClassData_t
 
 	bool		m_bDontDoAirwalk;
 	bool		m_bDontDoNewJump;
+
+	//Team models
+	bool		m_bUseTeamModels;
 
 	bool		m_bParsed;
 	Vector		m_vecThirdPersonOffset;
@@ -71,6 +84,12 @@ struct TFPlayerClassData_t
 
 	TFPlayerClassData_t();
 	const char *GetModelName() const;
+	//Invasion
+	const char* GetTeamModelName(int iTeam) const;
+	const char* GetModelNameForTeam(int iTeam) const;   
+	//Alien or human hands system
+	const char* GetHandModelName() const;
+	const char* GetHandModelNameForTeam(int iTeam) const; 
 
 #ifdef GAME_DLL
 	const char *GetDeathSound( int nType );

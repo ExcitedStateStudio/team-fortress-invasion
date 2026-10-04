@@ -62,6 +62,7 @@ public:
 
 	const char	*GetName( void ) const							{ return GetPlayerClassData( m_iClass )->m_szClassName; }
 	const char	*GetModelName( void ) const;
+	const char* GetModelNameForTeam(int iTeam) const; 
 	const char	*GetHandModelName( int iHandIndex ) const;
 	float		GetMaxSpeed( void )								{ return GetPlayerClassData( m_iClass )->m_flMaxSpeed; }
 	int			GetMaxHealth( void ) const						{ return GetPlayerClassData( m_iClass )->m_nMaxHealth; }
@@ -73,6 +74,8 @@ public:
 	bool		CustomModelIsVisibleToSelf( void ) const		{ return m_bCustomModelVisibleToSelf.Get(); }
 	bool		CustomModelUsesClassAnimations( void ) const	{ return m_bUseClassAnimations.Get(); }
 	bool		CustomModelHasChanged( void );
+	//Invasion hands
+	const char* GetHandModelNameForTeam(int iTeam, int iHandIndex = 0) const;
 
 	TFPlayerClassData_t  *GetData( void ) const					{ return GetPlayerClassData( m_iClass ); }
 
