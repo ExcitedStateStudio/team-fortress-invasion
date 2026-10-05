@@ -711,7 +711,7 @@ float CWeaponCombatShield::GetShieldHealth( void )
 //-----------------------------------------------------------------------------
 void CWeaponCombatShield::AddShieldHealth( float flHealth )
 {
-	m_flShieldHealth = min( 1.0, m_flShieldHealth + flHealth );
+	m_flShieldHealth = min( 1.0f, m_flShieldHealth + flHealth );
 }
 
 //-----------------------------------------------------------------------------
@@ -719,7 +719,7 @@ void CWeaponCombatShield::AddShieldHealth( float flHealth )
 //-----------------------------------------------------------------------------
 void CWeaponCombatShield::RemoveShieldHealth( float flHealth )
 {
-	m_flShieldHealth = max( 0.0, m_flShieldHealth - flHealth );
+	m_flShieldHealth = max( 0.0f, m_flShieldHealth - flHealth );
 }
 
 //-----------------------------------------------------------------------------
