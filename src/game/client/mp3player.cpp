@@ -6,7 +6,7 @@
 
 #include "cbase.h"
 
-#if 0
+#if 1
 #include "mp3player.h"
 #include "KeyValues.h"
 #include "filesystem.h"
@@ -33,6 +33,13 @@
 
 #include "engine/IEngineSound.h"
 
+#ifdef POSIX
+#include <stdlib.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -56,7 +63,27 @@ vgui::Panel *GetSDKRootPanel();
 #define DB_FILENAME			"resource/mp3player_db.txt"
 #define MP3_SETTINGS_FILE	"resource/mp3settings.txt"
 
+#ifdef _WIN32
+
 #define MP3_DEFAULT_MP3DIR "c:\\my music"
+
+#else
+
+static const char *GetDefaultMP3Dir()
+{
+  static char s_szDir[ 512 ];
+  const char *home = getenv( "HOME" );
+  if ( home && home[ 0 ] )
+    Q_snprintf( s_szDir, sizeof( s_szDir ), "%s/Music", home );
+  else
+    Q_strncpy( s_szDir, "/", sizeof( s_szDir ) );
+  return s_szDir;
+
+}
+
+#define MP3_DEFAULT_MP3DIR GetDefaultMP3Dir()
+
+#endif
 
 CMP3Player *GetMP3Player()
 {
@@ -1314,11 +1341,75 @@ void CMP3Player::PopulateTree()
 	PopulateLists();
 }
 
+#ifdef _WIN32
 // Instead of including windows.h
 extern "C"
 {
 	extern int __stdcall CopyFileA( char *pszSource, char *pszDest, int bFailIfExists );
 };
+
+#endif
+
+// Copy a file on disk. Fails if the destination already exists.
+static bool MP3_CopyFile( const char *pszSource, const char *pszDest )
+{
+#ifdef _WIN32
+  return ::CopyFileA( (char *)pszSource, (char *)pszDest, TRUE ) > 0;
+#else
+  int in = open( pszSource, O_RDONLY );
+  if ( in < 0 )
+    return false;
+
+	// O_EXCL = fail if exists, same as CopyFileA( ..., TRUE )
+	int out = open( pszDest, O_WRONLY | O_CREAT | O_EXCL, 0644 );
+	if ( out < 0 )
+	{
+		close( in );
+		return false;
+	}
+
+	bool ok = true;
+	char buf[ 64 * 1024 ];
+	for ( ;; )
+	{
+		ssize_t nread = read( in, buf, sizeof( buf ) );
+		if ( nread < 0 )
+		{
+			if ( errno == EINTR )
+				continue;
+			ok = false;
+			break;
+		}
+		if ( nread == 0 )
+			break;
+
+		char *p = buf;
+		while ( nread > 0 )
+		{
+			ssize_t nwritten = write( out, p, nread );
+			if ( nwritten < 0 )
+			{
+				if ( errno == EINTR )
+					continue;
+				ok = false;
+				break;
+			}
+			p += nwritten;
+			nread -= nwritten;
+		}
+		if ( !ok )
+			break;
+	}
+
+	close( in );
+	if ( close( out ) != 0 )
+		ok = false;
+	if ( !ok )
+		unlink( pszDest );
+
+	return ok;
+#endif
+}
 
 void CMP3Player::GetLocalCopyOfSong( const MP3File_t &mp3, char *outsong, size_t outlen )
 {
@@ -1372,10 +1463,7 @@ void CMP3Player::GetLocalCopyOfSong( const MP3File_t &mp3, char *outsong, size_t
 		Q_snprintf( sourcepath, sizeof( sourcepath ), "%s/%s", sdir->m_Root.String(), fn );
 		Q_FixSlashes( sourcepath );
 
-		// !!!HACK HACK:
-		// Total hack right now, using windows OS calls to copy file to full destination
-		int success = ::CopyFileA( sourcepath, destpath, TRUE );
-		if ( success > 0 )
+		if ( MP3_CopyFile( sourcepath, destpath ) )
 		{
 			Q_snprintf( outsong, outlen, "_mp3/%s.mp3", hexname );
 		}
