@@ -8,43 +8,27 @@
 #include "soundenvelope.h"
 #include <in_buttons.h>
 
+
+#include "tf_wearable_weapons.h"
+
 //-------------------------------------------------------------------------
-// Конвары — крутятся в консоли, ничего пересобирать не надо
+// Convars
 //-------------------------------------------------------------------------
+
 ConVar tf_sc_enabled("tf_sc_enabled", "1", FCVAR_NOTIFY,
-    "Включить фичи коммандо для солдата");
+    "Enable somando");
 
-ConVar tf_sc_speed_max("tf_sc_speed_max", "200", FCVAR_NOTIFY,
-    "Скорость солдата-коммандо");
-ConVar tf_sc_health_max("tf_sc_health_max", "200", FCVAR_NOTIFY,
-    "Somando's hp");
-
-// Bull Rush
-ConVar tf_sc_bullrush_enabled("tf_sc_bullrush_enabled", "1", FCVAR_NOTIFY);
 ConVar tf_sc_bullrush_doubletap_window("tf_sc_bullrush_doubletap_window", "3", FCVAR_NOTIFY,
-    "Окно между двумя нажатиями W для старта рывка (сек)");
-ConVar tf_sc_bullrush_duration("tf_sc_bullrush_duration", "2.0", FCVAR_NOTIFY,
-    "Длительность рывка (сек)");
-//Moved to tf_player_shared
-//ConVar tf_sc_bullrush_speed_mult("tf_sc_bullrush_speed_mult", "10.0", FCVAR_NOTIFY,
- //   "Множитель скорости во время рывка");
-ConVar tf_sc_bullrush_damage("tf_sc_bullrush_damage", "100", FCVAR_NOTIFY,
-    "Урон при столкновении во время рывка");
+    "How much time we need to hold doubletap window open?");
+
 
 ConVar tf_sc_bullrush_cooldown("tf_sc_bullrush_cooldown", "30.0", FCVAR_NOTIFY,
-    "Кулдаун рывка солдата-коммандо (сек)");
-
-
-ConVar tf_sc_bullrush_wall_damage("tf_sc_bullrush_wall_damage", "25", FCVAR_NOTIFY,
-    "Урон коммандо при ударе в стену во время рывка");
-ConVar tf_sc_bullrush_wall_stun("tf_sc_bullrush_wall_stun", "3.0", FCVAR_NOTIFY,
-    "Длительность стана коммандо после удара в стену (сек)");
+    "Commando's bullrush CD");
 
 // Adrenaline
 ConVar tf_sc_adrenaline_enabled("tf_sc_adrenaline_enabled", "1", FCVAR_NOTIFY);
 ConVar tf_sc_adrenaline_duration("tf_sc_adrenaline_duration", "10", FCVAR_NOTIFY);
 ConVar tf_sc_adrenaline_cooldown("tf_sc_adrenaline_cooldown", "60", FCVAR_NOTIFY);
-//ConVar tf_sc_adrenaline_speed_mult("tf_sc_adrenaline_speed_mult", "1.4", FCVAR_NOTIFY);
 
 // Battlecry
 ConVar tf_sc_battlecry_enabled("tf_sc_battlecry_enabled", "1", FCVAR_NOTIFY);
@@ -82,49 +66,90 @@ CSoldierCommando* GetSoldierCommando(CTFPlayer* pPlayer)
 //-------------------------------------------------------------------------
 CSoldierCommando::CSoldierCommando()
 {
-    m_bBullRush = false;
-    m_flBullRushEndTime = 0.f;
-    m_flDoubleTapWindowEnd = 0.f;
     m_bWaitSecondTap = false;
-    m_vecBullRushDir.Init();
+    m_flDoubleTapWindowEnd = 0.f;
     m_flNextAdrenalineTime = 0.f;
     m_flNextBattlecryTime = 0.f;
     m_flNextBootTime = 0.f;
-    m_flNextBullRushTime = 0.f;
 }
 
 CSoldierCommando::~CSoldierCommando()
 {
-    StopBullRush();
 }
 
 void CSoldierCommando::OnSpawn()
 {
-    StopBullRush();
     m_flNextAdrenalineTime = 0.f;
     m_flNextBattlecryTime = 0.f;
     m_flNextBootTime = 0.f;
     m_bWaitSecondTap = false;
     m_flDoubleTapWindowEnd = 0.f;
-    m_flNextBullRushTime = 0.f;
-    m_vecHitPlayers.RemoveAll();
+
+//Demo's shield
+    m_hChargeShield = NULL;
 }
 
 void CSoldierCommando::OnDeath()
 {
-    m_flNextBullRushTime = 0.f;
-    StopBullRush();
+}
+
+
+//-------------------------------------------------------------------------
+//Giving shield to player...(Econ bypass)
+//-------------------------------------------------------------------------
+CTFWearableDemoShield* CSoldierCommando::EnsureChargeShield()
+{
+    CTFPlayer* pOwner = m_hOwner.Get();
+    if (!pOwner)
+        return NULL;
+
+
+    for (int i = 0; i < pOwner->GetNumWearables(); ++i)
+    {
+        CTFWearableDemoShield* pShield =
+            dynamic_cast<CTFWearableDemoShield*>(pOwner->GetWearable(i));
+        if (pShield)
+            return pShield;
+    }
+
+
+    if (m_hChargeShield)
+        return m_hChargeShield;
+
+    //WITHOUT ECON. --AGR
+    CTFWearableDemoShield* pShield =
+        dynamic_cast<CTFWearableDemoShield*>(CreateEntityByName("tf_wearable_demoshield"));
+
+    if (!pShield)
+    {
+        Warning("Failed to give shield to player!\n");
+        return NULL;
+    }
+
+
+    pShield->SetAbsOrigin(pOwner->GetAbsOrigin());
+    pShield->SetAbsAngles(pOwner->GetAbsAngles());
+    pShield->SetLocalAngles(pOwner->GetLocalAngles());
+
+    DispatchSpawn(pShield);
+
+
+    pOwner->EquipWearable(pShield);
+
+   
+    pShield->AddEffects(EF_NODRAW | EF_NOSHADOW);
+    pShield->AddSolidFlags(FSOLID_NOT_SOLID);
+
+    m_hChargeShield = pShield;
+    return pShield;
 }
 
 //-------------------------------------------------------------------------
-// Детектор двойного тапа вперёд. Вызывается из PlayerRunCommand/PreThink.
+// Tapes
 //-------------------------------------------------------------------------
 void CSoldierCommando::NoteButtonState(int nButtons, int nOldButtons)
 {
-    if (!tf_sc_enabled.GetBool() || !tf_sc_bullrush_enabled.GetBool())
-        return;
-
-    if (m_bBullRush)
+    if (!tf_sc_enabled.GetBool())
         return;
 
     CTFPlayer* pOwner = m_hOwner.Get();
@@ -134,8 +159,8 @@ void CSoldierCommando::NoteButtonState(int nButtons, int nOldButtons)
     if (!pOwner->IsPlayerClass(TF_CLASS_SOLDIER))
         return;
 
- 
-    if (gpGlobals->curtime < m_flNextBullRushTime)
+
+    if (pOwner->m_Shared.InCond(TF_COND_SHIELD_CHARGE))
     {
         m_bWaitSecondTap = false;
         m_flDoubleTapWindowEnd = 0.f;
@@ -146,7 +171,8 @@ void CSoldierCommando::NoteButtonState(int nButtons, int nOldButtons)
     bool bForwardWasDown = (nOldButtons & IN_FORWARD) != 0;
     bool bForwardJustDown = bForwardPressed && !bForwardWasDown;
 
-    // Любая другая клавиша движения сбрасывает окно
+ 
+
     if (nButtons & (IN_BACK | IN_MOVELEFT | IN_MOVERIGHT | IN_JUMP | IN_DUCK))
     {
         m_bWaitSecondTap = false;
@@ -154,221 +180,38 @@ void CSoldierCommando::NoteButtonState(int nButtons, int nOldButtons)
         return;
     }
 
-    if (bForwardJustDown)
+    if (!bForwardJustDown)
+        return;
+
+
+    if (m_bWaitSecondTap && gpGlobals->curtime <= m_flDoubleTapWindowEnd)
     {
-        if (m_bWaitSecondTap && gpGlobals->curtime <= m_flDoubleTapWindowEnd)
+        m_bWaitSecondTap = false;
+        m_flDoubleTapWindowEnd = 0.f;
+
+        CTFWearableDemoShield* pShield = EnsureChargeShield();
+        if (pShield && pShield->CanCharge(pOwner))
         {
-            // Двойной тап!
-            m_bWaitSecondTap = false;
-            m_flDoubleTapWindowEnd = 0.f;
-            StartBullRush();
+
+            pShield->DoSpecialAction(pOwner);
         }
         else
         {
-            // Первый тап
-            m_bWaitSecondTap = true;
-            m_flDoubleTapWindowEnd = gpGlobals->curtime + tf_sc_bullrush_doubletap_window.GetFloat();
+            pOwner->EmitSound("Player.DenyWeaponSelection");
         }
     }
-}
-
-//-------------------------------------------------------------------------
-void CSoldierCommando::StartBullRush()
-{
-    CTFPlayer* pOwner = m_hOwner.Get();
-    if (!pOwner || !pOwner->IsAlive())
-        return;
-
-    if (!pOwner->IsPlayerClass(TF_CLASS_SOLDIER))
-        return;
-
-    // --- Кулдаун ---
-    if (gpGlobals->curtime < m_flNextBullRushTime)
+    else
     {
-        pOwner->EmitSound("Player.DenyWeaponSelection");
-        return;
+   
+        m_bWaitSecondTap = true;
+        m_flDoubleTapWindowEnd = gpGlobals->curtime + tf_sc_bullrush_doubletap_window.GetFloat();
     }
-
-    // --- В прыжке нельзя ---
-    if (!(pOwner->GetFlags() & FL_ONGROUND))
-    {
-        pOwner->EmitSound("Player.DenyWeaponSelection");
-        return;
-    }
-
-    // --- В ноуклипе / обсервере нельзя ---
-    int nMoveType = pOwner->GetMoveType();
-    if (nMoveType == MOVETYPE_NOCLIP || nMoveType == MOVETYPE_OBSERVER)
-    {
-        pOwner->EmitSound("Player.DenyWeaponSelection");
-        return;
-    }
-
-    m_flNextBullRushTime = gpGlobals->curtime + tf_sc_bullrush_cooldown.GetFloat();
-
-    pOwner->m_bBullRushActive = true;
-    pOwner->TeamFortress_SetSpeed();
-
-    m_bBullRush = true;
-    m_flBullRushEndTime = gpGlobals->curtime + tf_sc_bullrush_duration.GetFloat();
-    m_vecHitPlayers.RemoveAll();
-
-    QAngle ang = pOwner->EyeAngles();
-    ang[PITCH] = 0;
-    ang[ROLL] = 0;
-    AngleVectors(ang, &m_vecBullRushDir);
-    m_vecBullRushDir.z = 0;
-    VectorNormalize(m_vecBullRushDir);
-
-    pOwner->EmitSound("Commando.BullRushScream");
-    DispatchParticleEffect("bullrush_trail", PATTACH_ABSORIGIN_FOLLOW, pOwner);
-}
-void CSoldierCommando::StopBullRush()
-{
-    if (!m_bBullRush)
-        return;
-
-    if (CTFPlayer* pOwner = m_hOwner.Get())
-    {
-        pOwner->m_bBullRushActive = false;
-        pOwner->TeamFortress_SetSpeed();
-    }
-
-    m_bBullRush = false;
-    m_flBullRushEndTime = 0.f;
-    m_vecHitPlayers.RemoveAll();
-
-}
-//-------------------------------------------------------------------------
-// Тик рывка: держим скорость, ищем столкновения с врагами
-//-------------------------------------------------------------------------
-void CSoldierCommando::ThinkBullRush()
-{
-    CTFPlayer* pOwner = m_hOwner.Get();
-    if (!pOwner)
-        return;
-
-    if (!m_bBullRush)
-        return;
-
-    if (!pOwner->IsAlive() || gpGlobals->curtime >= m_flBullRushEndTime)
-    {
-        StopBullRush();
-        return;
-    }
-
-    pOwner->TeamFortress_SetSpeed();
-
-    // Углы — по зафиксированному направлению рывка
-    QAngle angNew = pOwner->GetLocalAngles();
-    angNew[YAW] = m_vecBullRushDir.y == 0 && m_vecBullRushDir.x == 0
-        ? angNew[YAW]
-        : RAD2DEG(atan2f(m_vecBullRushDir.y, m_vecBullRushDir.x));
-    angNew[PITCH] = 0;
-    pOwner->SetLocalAngles(angNew);
-
-    QAngle angLock(0, angNew[YAW], 0);
-    pOwner->ForcePlayerViewAngles(angLock);
-
-    // 1. Попали в игрока? → стоп без урона себе
-    if (BullRushTouchEnemies())
-    {
-        StopBullRush();
-        return;
-    }
-
-    // 2. Влетели в стену? → стоп + урон + стан
-    if (BullRushCheckWall())
-    {
-        // Внутри всё уже сделано (урон, стан, StopBullRush)
-        return;
-    }
-}
-
-//-------------------------------------------------------------------------
-bool CSoldierCommando::BullRushTouchEnemies()
-{
-    CTFPlayer* pOwner = m_hOwner.Get();
-    if (!pOwner)
-        return false;
-
-    Vector vecCenter = pOwner->WorldSpaceCenter() + m_vecBullRushDir * 32.f;
-    CBaseEntity* pList[32];
-    int nCount = UTIL_EntitiesInSphere(pList, 32, vecCenter, 48.f, FL_CLIENT);
-
-    bool bHitAnyone = false;
-
-    for (int i = 0; i < nCount; ++i)
-    {
-        CTFPlayer* pVictim = ToTFPlayer(pList[i]);
-        if (!pVictim || pVictim == pOwner)
-            continue;
-        if (pVictim->InSameTeam(pOwner))
-            continue;
-        if (!pVictim->IsAlive())
-            continue;
-        if (m_vecHitPlayers.Find(pVictim) != m_vecHitPlayers.InvalidIndex())
-            continue;
-
-        CTakeDamageInfo info(pOwner, pOwner, tf_sc_bullrush_damage.GetFloat(), DMG_CLUB);
-        Vector vecDir = pVictim->WorldSpaceCenter() - pOwner->WorldSpaceCenter();
-        VectorNormalize(vecDir);
-        vecDir.z = 0.5f;
-        info.SetDamageForce(vecDir * 600.f);
-        pVictim->TakeDamage(info);
-
-        pOwner->EmitSound("Commando.BullRushFlesh");
-
-        m_vecHitPlayers.AddToTail(pVictim);
-        bHitAnyone = true;
-    }
-
-    return bHitAnyone;
-}
-
-bool CSoldierCommando::BullRushCheckWall()
-{
-    CTFPlayer* pOwner = m_hOwner.Get();
-    if (!pOwner)
-        return false;
-
-    // Смотрим вперёд по направлению рывка
-    Vector vecStart = pOwner->WorldSpaceCenter();
-    Vector vecEnd = vecStart + m_vecBullRushDir * 40.f;
-
-    trace_t tr;
-    CTraceFilterSimple filter(pOwner, COLLISION_GROUP_PLAYER);
-    UTIL_TraceHull(vecStart, vecEnd, VEC_HULL_MIN, VEC_HULL_MAX,
-        MASK_PLAYERSOLID, &filter, &tr);
-
-    if (tr.fraction >= 1.0f || !tr.m_pEnt)
-        return false;
-
-    // Нас интересует именно стена/браш, не игрок и не проп
-    if (!tr.m_pEnt->IsWorld() && !tr.m_pEnt->IsBSPModel())
-        return false;
-
-    // --- Урон ---
-    CTakeDamageInfo info(pOwner, pOwner,
-        tf_sc_bullrush_wall_damage.GetFloat(), DMG_CLUB);
-    pOwner->TakeDamage(info);
-
-    // --- Стан ---
-    pOwner->m_Shared.StunPlayer(tf_sc_bullrush_wall_stun.GetFloat(), 1.f,
-        TF_STUN_BOTH | TF_STUN_NO_EFFECTS, pOwner);
-
-    // --- Эффекты ---
-    pOwner->EmitSound("Player.FallDamageDealt");
-    pOwner->EmitSound("Commando.BullRushWallImpact");  // свой звук, если есть
-    DispatchParticleEffect("impact_wallbang_heavy", PATTACH_ABSORIGIN_FOLLOW, pOwner);
-
-    StopBullRush();
-    return true;
 }
 
 //-------------------------------------------------------------------------
 // Adrenaline
 //-------------------------------------------------------------------------
+//FIXME --Needs techtree.
 void CSoldierCommando::ActivateAdrenaline()
 {
     if (!tf_sc_enabled.GetBool() || !tf_sc_adrenaline_enabled.GetBool())
@@ -388,19 +231,15 @@ void CSoldierCommando::ActivateAdrenaline()
 
     m_flNextAdrenalineTime = gpGlobals->curtime + tf_sc_adrenaline_cooldown.GetFloat();
 
-    pOwner->m_flAdrenalineEndTime = gpGlobals->curtime + tf_sc_adrenaline_duration.GetFloat();
-    pOwner->m_flAdrenalineSpeedMult = tf_sc_adrenaline_speed_mult.GetFloat();
-
-
     pOwner->m_bAdrenalineActive = true;
     pOwner->m_flAdrenalineEndTime = gpGlobals->curtime + tf_sc_adrenaline_duration.GetFloat();
+    pOwner->m_flAdrenalineSpeedMult = tf_sc_adrenaline_speed_mult.GetFloat();
     pOwner->TeamFortress_SetSpeed();
-
-
 
     pOwner->EmitSound("Commando.Adrenaline");
     DispatchParticleEffect("adrenaline_rush", PATTACH_ABSORIGIN_FOLLOW, pOwner);
 }
+
 void CSoldierCommando::ThinkAdrenaline()
 {
     CTFPlayer* pOwner = m_hOwner.Get();
@@ -414,6 +253,7 @@ void CSoldierCommando::ThinkAdrenaline()
         pOwner->TeamFortress_SetSpeed();
     }
 }
+
 //-------------------------------------------------------------------------
 // Battlecry
 //-------------------------------------------------------------------------
@@ -450,7 +290,6 @@ void CSoldierCommando::ActivateBattlecry()
         if ((pMate->GetAbsOrigin() - vecMyOrigin).Length() > flRadius)
             continue;
 
-        // LOS
         trace_t tr;
         UTIL_TraceLine(pOwner->EyePosition(), pMate->EyePosition(),
             MASK_SOLID_BRUSHONLY, pOwner, COLLISION_GROUP_NONE, &tr);
@@ -470,11 +309,35 @@ void CSoldierCommando::ActivateBattlecry()
 
 void CSoldierCommando::ThinkBattlecry()
 {
-    // Ничего периодического, кулдаун проверяется в Activate
+
+}
+
+
+
+void CSoldierCommando::ThinkChargeRecharge()
+{
+    CTFPlayer* pOwner = m_hOwner.Get();
+    if (!pOwner || !pOwner->IsAlive())
+        return;
+
+
+    if (pOwner->m_Shared.InCond(TF_COND_SHIELD_CHARGE))
+        return;
+
+    float flMeter = pOwner->m_Shared.GetDemomanChargeMeter();
+    if (flMeter >= 100.f)
+        return;
+
+    float flCooldown = Max(tf_sc_bullrush_cooldown.GetFloat(), 0.01f);
+    flMeter += gpGlobals->frametime * (100.f / flCooldown);
+    if (flMeter > 100.f)
+        flMeter = 100.f;
+
+    pOwner->m_Shared.SetDemomanChargeMeter(flMeter);
 }
 
 //-------------------------------------------------------------------------
-// Boot — автопинок при враге впритык
+// Auto melee
 //-------------------------------------------------------------------------
 void CSoldierCommando::ThinkBoot()
 {
@@ -504,7 +367,6 @@ void CSoldierCommando::ThinkBoot()
         if (pTarget->InSameTeam(pOwner) || !pTarget->IsAlive())
             continue;
 
-        // Удар
         CTakeDamageInfo info(pOwner, pOwner, tf_sc_boot_damage.GetFloat(), DMG_CLUB);
         Vector vecPush = vecDir;
         vecPush.z = Max(0.8f, vecPush.z);
@@ -512,7 +374,6 @@ void CSoldierCommando::ThinkBoot()
         info.SetDamageForce(vecPush * 500.f);
         pTarget->TakeDamage(info);
 
-        // Подброс
         Vector vecVel = pTarget->GetAbsVelocity();
         vecVel.z += 250.f;
         pTarget->SetAbsVelocity(vecVel);
@@ -525,7 +386,7 @@ void CSoldierCommando::ThinkBoot()
 }
 
 //-------------------------------------------------------------------------
-// Главный тик
+// Main think
 //-------------------------------------------------------------------------
 void CSoldierCommando::Think()
 {
@@ -537,16 +398,13 @@ void CSoldierCommando::Think()
         return;
 
     if (!pOwner->IsAlive())
-    {
-        StopBullRush();
         return;
-    }
 
     if (!pOwner->IsPlayerClass(TF_CLASS_SOLDIER))
         return;
 
-    ThinkBullRush();
     ThinkAdrenaline();
     ThinkBattlecry();
-   // ThinkBoot();
+    ThinkChargeRecharge();
+    // ThinkBoot();
 }
