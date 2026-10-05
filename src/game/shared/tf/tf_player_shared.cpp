@@ -114,18 +114,18 @@ static const float YAW_CAP_SCALE_MAX = 2.f;
 
 
 ConVar tf_sc_bullrush_anim_speed("tf_sc_bullrush_anim_speed", "2.0", FCVAR_REPLICATED | FCVAR_NOTIFY,
-	"Множитель скорости анимации во время рывка коммандо");
+	"Anim's speed when rushing");
 
 ConVar tf_halloween_kart_boost_recharge( "tf_halloween_kart_boost_recharge", "5.0f", FCVAR_REPLICATED | FCVAR_CHEAT );
 ConVar tf_halloween_kart_boost_duration( "tf_halloween_kart_boost_duration", "1.5f", FCVAR_REPLICATED | FCVAR_CHEAT );
 
 ConVar tf_sc_bullrush_speed_mult("tf_sc_bullrush_speed_mult", "2.0",
 	FCVAR_REPLICATED | FCVAR_NOTIFY,
-	"Множитель скорости во время рывка коммандо");
+	"Speed mult when rushing");
 
 ConVar tf_sc_adrenaline_speed_mult("tf_sc_adrenaline_speed_mult", "1.4",
 	FCVAR_REPLICATED | FCVAR_NOTIFY,
-	"Множитель скорости во время адреналина/боевого клича");
+	"Adrenaline speed mult.");
 
 ConVar tf_scout_air_dash_count( "tf_scout_air_dash_count", "1", FCVAR_REPLICATED | FCVAR_CHEAT | FCVAR_DEVELOPMENTONLY );
 
@@ -10966,7 +10966,7 @@ float CTFPlayer::TeamFortress_CalculateMaxSpeed( bool bIgnoreSpecialAbility /*= 
 		maxfbspeed *= pWeapon->GetSpeedMod();
 	}
 
-	if ( playerclass == TF_CLASS_DEMOMAN )
+	if ( playerclass == TF_CLASS_SOLDIER )
 	{
 		CTFSword *pSword = dynamic_cast<CTFSword*>(Weapon_OwnsThisID( TF_WEAPON_SWORD ));
 		if ( pSword )
@@ -11158,11 +11158,12 @@ void CTFPlayer::TeamFortress_SetSpeed()
 			s_flLogTFS = gpGlobals->curtime + 0.5f;
 			
 		}
-		if (m_bBullRushActive)
-		{
-			fMaxSpeed *= tf_sc_bullrush_speed_mult.GetFloat();     
-		}
-		else if (m_bAdrenalineActive)                            
+		//Oldbullrush
+		//if (m_bBullRushActive)
+		//{
+		//	fMaxSpeed *= tf_sc_bullrush_speed_mult.GetFloat();     
+		//}
+		if (m_bAdrenalineActive)                            
 		{
 			fMaxSpeed *= Max(tf_sc_adrenaline_speed_mult.GetFloat(), 0.01f);
 		}
