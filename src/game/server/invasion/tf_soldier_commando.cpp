@@ -160,6 +160,19 @@ CTFWearableDemoShield* CSoldierCommando::EnsureChargeShield()
     return pShield;
 }
 
+static bool IsChargeBlocked( CTFPlayer *pPlayer, const Vector &vecDir )
+{
+  Vector vecStart = pPlayer->GetAbsOrigin();
+
+  trace_t tr;
+  UTIL_TraceHull( vecStart, vecStart + vecDir * 32.f, pPlayer->GetPlayerMins(), pPlayer->GetPlayerMaxs(), MASK_PLAYERSOLID_BRUSHONLY, pPlayer, COLLISION_GROUP_PLAYER_MOVEMENT, &tr );
+
+  if ( !tr.DidHit() || tr.plane.normal.z > 0.7f )
+    return false;
+
+  return DotProduct( vecDir, -tr.plane.normal ) >= tf_sc_charge_crash_min_dot.GetFloat();
+}
+
 void CSoldierCommando::ThinkChargeCrash()
 {
   CTFPlayer* pOwner = m_hOwner.Get();
@@ -183,19 +196,18 @@ void CSoldierCommando::ThinkChargeCrash()
 
   // Intended direction used instead of velocity since velocity follows the wall when sliding
   Vector vecDir;
-  AngleVectors(QAngle(0.f, pOwner->EyeAngles().y, 0.f), &vecDir);
+  AngleVectors( QAngle( 0.f, pOwner->EyeAngles().y, 0.f ), &vecDir );
+  bool bBlocked = IsChargeBlocked( pOwner, vecDir );
 
-  Vector vecStart = pOwner->GetAbsOrigin();
-  Vector vecEnd = vecStart + vecDir * 32.f;
+  if ( !bBlocked )
+  {
+    Vector vecVel = pOwner->GetAbsVelocity();
+    vecVel.z = 0.f;
+    if ( vecVel.NormalizeInPlace() > tf_sc_charge_crash_speed_eps.GetFloat() )
+      bBlocked = IsChargeBlocked( pOwner, vecVel );
+  }
 
-  trace_t tr;
-  UTIL_TraceHull(vecStart, vecEnd, pOwner->GetPlayerMins(), pOwner->GetPlayerMaxs(),
-      MASK_PLAYERSOLID_BRUSHONLY, pOwner, COLLISION_GROUP_PLAYER_MOVEMENT, &tr);
-
-  if (!tr.DidHit() || tr.plane.normal.z > 0.7f)
-    return;
-
-  if (DotProduct(vecDir, -tr.plane.normal) < tf_sc_charge_crash_min_dot.GetFloat())
+  if ( !bBlocked )
     return;
 
   m_bChargeCrashed = true;
