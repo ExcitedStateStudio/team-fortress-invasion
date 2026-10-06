@@ -214,65 +214,21 @@ void CSoldierCommando::ThinkChargeCrash()
 //-------------------------------------------------------------------------
 // Tapes
 //-------------------------------------------------------------------------
-void CSoldierCommando::NoteButtonState(int nButtons, int nOldButtons)
+void CSoldierCommando::NoteButtonState( int nButtons, int nOldButtons )
 {
-    if (!tf_sc_enabled.GetBool())
+    CTFPlayer *pOwner = m_hOwner.Get();
+    if ( !tf_sc_enabled.GetBool() || !pOwner || !pOwner->IsAlive() || !pOwner->IsPlayerClass( TF_CLASS_SOLDIER ) )
         return;
 
-    CTFPlayer* pOwner = m_hOwner.Get();
-    if (!pOwner || !pOwner->IsAlive())
+    bool bAbilityPressed = ( nButtons & IN_ABILITY1 ) && !( nOldButtons & IN_ABILITY1 );
+    if ( !bAbilityPressed || pOwner->m_Shared.InCond( TF_COND_SHIELD_CHARGE ) )
         return;
 
-    if (!pOwner->IsPlayerClass(TF_CLASS_SOLDIER))
-        return;
-
-
-    if (pOwner->m_Shared.InCond(TF_COND_SHIELD_CHARGE))
-    {
-        m_bWaitSecondTap = false;
-        m_flDoubleTapWindowEnd = 0.f;
-        return;
-    }
-
-    bool bForwardPressed = (nButtons & IN_FORWARD) != 0;
-    bool bForwardWasDown = (nOldButtons & IN_FORWARD) != 0;
-    bool bForwardJustDown = bForwardPressed && !bForwardWasDown;
-
- 
-
-    if (nButtons & (IN_BACK | IN_MOVELEFT | IN_MOVERIGHT | IN_JUMP | IN_DUCK))
-    {
-        m_bWaitSecondTap = false;
-        m_flDoubleTapWindowEnd = 0.f;
-        return;
-    }
-
-    if (!bForwardJustDown)
-        return;
-
-
-    if (m_bWaitSecondTap && gpGlobals->curtime <= m_flDoubleTapWindowEnd)
-    {
-        m_bWaitSecondTap = false;
-        m_flDoubleTapWindowEnd = 0.f;
-
-        CTFWearableDemoShield* pShield = EnsureChargeShield();
-        if (pShield && pShield->CanCharge(pOwner))
-        {
-
-            pShield->DoSpecialAction(pOwner);
-        }
-        else
-        {
-            pOwner->EmitSound("Player.DenyWeaponSelection");
-        }
-    }
+    CTFWearableDemoShield *pShield = EnsureChargeShield();
+    if ( pShield && pShield->CanCharge( pOwner ) )
+        pShield->DoSpecialAction( pOwner );
     else
-    {
-   
-        m_bWaitSecondTap = true;
-        m_flDoubleTapWindowEnd = gpGlobals->curtime + tf_sc_bullrush_doubletap_window.GetFloat();
-    }
+        pOwner->EmitSound( "Player.DenyWeaponSelection" );
 }
 
 //-------------------------------------------------------------------------
