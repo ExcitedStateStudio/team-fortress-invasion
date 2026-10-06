@@ -52,6 +52,11 @@ private:
     bool    BullRushTouchEnemies();   
     bool    BullRushCheckWall();    
 
+    bool m_bChargeCamActive;
+    void ThinkChargeCamera();
+    void ClearChargeCamera();
+
+
     CHandle<CTFPlayer>  m_hOwner;
 
     CTFWearableDemoShield* EnsureChargeShield();

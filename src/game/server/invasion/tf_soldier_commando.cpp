@@ -71,6 +71,7 @@ CSoldierCommando::CSoldierCommando()
     m_flNextAdrenalineTime = 0.f;
     m_flNextBattlecryTime = 0.f;
     m_flNextBootTime = 0.f;
+    m_bChargeCamActive = false;
 }
 
 CSoldierCommando::~CSoldierCommando()
@@ -87,10 +88,13 @@ void CSoldierCommando::OnSpawn()
 
 //Demo's shield
     m_hChargeShield = NULL;
+
+  ClearChargeCamera();
 }
 
 void CSoldierCommando::OnDeath()
 {
+  ClearChargeCamera();
 }
 
 
@@ -386,6 +390,40 @@ void CSoldierCommando::ThinkBoot()
 }
 
 //-------------------------------------------------------------------------
+// thirdperson camer while rushing
+//-------------------------------------------------------------------------
+void CSoldierCommando::ThinkChargeCamera()
+{
+  CTFPlayer* pOwner = m_hOwner.Get();
+  if (!pOwner)
+    return;
+
+  bool bCharging = pOwner->m_Shared.InCond(TF_COND_SHIELD_CHARGE);
+
+  if (bCharging && !m_bChargeCamActive)
+  {
+    pOwner->SetForcedTauntCam(1);
+    m_bChargeCamActive = true;
+  }
+  else if (!bCharging && m_bChargeCamActive)
+  {
+    ClearChargeCamera();
+  }
+}
+
+void CSoldierCommando::ClearChargeCamera()
+{
+  if (!m_bChargeCamActive)
+    return;
+
+  CTFPlayer* pOwner = m_hOwner.Get();
+  if (pOwner)
+    pOwner->SetForcedTauntCam(0);
+
+  m_bChargeCamActive = false;
+}
+
+//-------------------------------------------------------------------------
 // Main think
 //-------------------------------------------------------------------------
 void CSoldierCommando::Think()
@@ -406,5 +444,6 @@ void CSoldierCommando::Think()
     ThinkAdrenaline();
     ThinkBattlecry();
     ThinkChargeRecharge();
+    ThinkChargeCamera();
     // ThinkBoot();
 }
