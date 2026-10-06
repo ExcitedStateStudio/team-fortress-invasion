@@ -33,6 +33,7 @@ ConVar tf_sc_charge_crash_speed_eps("tf_sc_charge_crash_speed_eps", "50.0", FCVA
     "The speed threshold after which we stop");
 
 ConVar tf_sc_charge_crash_min_moving_time("tf_sc_charge_crash_min_moving_time", "0.15", FCVAR_NOTIFY);
+ConVar tf_sc_charge_crash_min_dot("tf_sc_charge_crash_min_dot", "0.25", FCVAR_NOTIFY, "1 = head-on crash only, 0 = crash to any non-parallel wall");
 
 // Adrenaline
 ConVar tf_sc_adrenaline_enabled("tf_sc_adrenaline_enabled", "1", FCVAR_NOTIFY);
@@ -159,58 +160,50 @@ CTFWearableDemoShield* CSoldierCommando::EnsureChargeShield()
     return pShield;
 }
 
-//AGR START
 void CSoldierCommando::ThinkChargeCrash()
 {
-    CTFPlayer* pOwner = m_hOwner.Get();
-    if (!pOwner || !pOwner->IsAlive())
-        return;
+  CTFPlayer* pOwner = m_hOwner.Get();
+  if (!pOwner || !pOwner->IsAlive())
+    return;
 
-    if (!pOwner->m_Shared.InCond(TF_COND_SHIELD_CHARGE))
-    {
-        m_bChargeCrashed = false;
-        m_flChargeMovingSince = 0.f;
-        return;
-    }
+  if (!pOwner->m_Shared.InCond(TF_COND_SHIELD_CHARGE))
+  {
+    m_bChargeCrashed = false;
+    m_flChargeMovingSince = 0.f;
+    return;
+  }
 
-    if (m_bChargeCrashed)
-        return;
+  if (m_bChargeCrashed)
+    return;
 
-    Vector vecVel = pOwner->GetAbsVelocity();
-    vecVel.z = 0.f;
-    float flSpeed2D = vecVel.Length();
+  if (m_flChargeMovingSince == 0.f)
+    m_flChargeMovingSince = gpGlobals->curtime;
+  if (gpGlobals->curtime - m_flChargeMovingSince < tf_sc_charge_crash_min_moving_time.GetFloat())
+    return;
 
-    float flEps = tf_sc_charge_crash_speed_eps.GetFloat();
+  // Intended direction used instead of velocity since velocity follows the wall when sliding
+  Vector vecDir;
+  AngleVectors(QAngle(0.f, pOwner->EyeAngles().y, 0.f), &vecDir);
 
-    if (flSpeed2D > flEps)
-    {
-        if (m_flChargeMovingSince == 0.f)
-            m_flChargeMovingSince = gpGlobals->curtime;
-        return;
-    }
+  Vector vecStart = pOwner->GetAbsOrigin();
+  Vector vecEnd = vecStart + vecDir * 32.f;
 
-    if (m_flChargeMovingSince == 0.f)
-        return;
-    if (gpGlobals->curtime - m_flChargeMovingSince < tf_sc_charge_crash_min_moving_time.GetFloat())
-        return;
+  trace_t tr;
+  UTIL_TraceHull(vecStart, vecEnd, pOwner->GetPlayerMins(), pOwner->GetPlayerMaxs(),
+      MASK_PLAYERSOLID_BRUSHONLY, pOwner, COLLISION_GROUP_PLAYER_MOVEMENT, &tr);
 
-    Vector vecForward = pOwner->BodyDirection2D();
-    Vector vecStart = pOwner->GetAbsOrigin();
-    Vector vecEnd = vecStart + vecForward * 40.f;
+  if (!tr.DidHit() || tr.plane.normal.z > 0.7f)
+    return;
 
-    trace_t tr;
-    UTIL_TraceLine(vecStart, vecEnd, MASK_SOLID_BRUSHONLY, pOwner, COLLISION_GROUP_NONE, &tr);
+  if (DotProduct(vecDir, -tr.plane.normal) < tf_sc_charge_crash_min_dot.GetFloat())
+    return;
 
-    if (tr.fraction >= 1.f && !tr.startsolid)
-        return; 
-
-    m_bChargeCrashed = true;
-    pOwner->m_Shared.RemoveCond(TF_COND_SHIELD_CHARGE);
-    pOwner->SetAbsVelocity(vec3_origin);
-    pOwner->m_Shared.AddCond(TF_COND_STUNNED, tf_sc_charge_crash_stun.GetFloat());
-    pOwner->EmitSound("Player.DenyWeaponSelection");
+  m_bChargeCrashed = true;
+  pOwner->m_Shared.RemoveCond(TF_COND_SHIELD_CHARGE);
+  pOwner->SetAbsVelocity(vec3_origin);
+  pOwner->m_Shared.AddCond(TF_COND_STUNNED, tf_sc_charge_crash_stun.GetFloat());
+  pOwner->EmitSound("Player.DenyWeaponSelection");
 }
-//AGR END
 //-------------------------------------------------------------------------
 // Tapes
 //-------------------------------------------------------------------------
