@@ -48,6 +48,7 @@ private:
     void    ThinkBoot();
     void    ThinkChargeRecharge();
 
+    void ThinkChargeCrash();
 
     bool    BullRushTouchEnemies();   
     bool    BullRushCheckWall();    
@@ -65,7 +66,8 @@ private:
     CHandle<CTFWearableDemoShield>  m_hChargeShield;
 
 
-
+    bool m_bChargeCrashed;
+    float m_flChargeMovingSince; 
 
     bool    m_bWaitSecondTap;
     float   m_flDoubleTapWindowEnd;

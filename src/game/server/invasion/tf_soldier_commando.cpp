@@ -25,6 +25,15 @@ ConVar tf_sc_bullrush_doubletap_window("tf_sc_bullrush_doubletap_window", "3", F
 ConVar tf_sc_bullrush_cooldown("tf_sc_bullrush_cooldown", "30.0", FCVAR_NOTIFY,
     "Commando's bullrush CD");
 
+ConVar tf_sc_charge_crash_stun("tf_sc_charge_crash_stun", "2.0", FCVAR_NOTIFY,
+    "Commando's stun time.");
+
+
+ConVar tf_sc_charge_crash_speed_eps("tf_sc_charge_crash_speed_eps", "50.0", FCVAR_NOTIFY,
+    "The speed threshold after which we stop");
+
+ConVar tf_sc_charge_crash_min_moving_time("tf_sc_charge_crash_min_moving_time", "0.15", FCVAR_NOTIFY);
+
 // Adrenaline
 ConVar tf_sc_adrenaline_enabled("tf_sc_adrenaline_enabled", "1", FCVAR_NOTIFY);
 ConVar tf_sc_adrenaline_duration("tf_sc_adrenaline_duration", "10", FCVAR_NOTIFY);
@@ -85,7 +94,9 @@ void CSoldierCommando::OnSpawn()
     m_flNextBootTime = 0.f;
     m_bWaitSecondTap = false;
     m_flDoubleTapWindowEnd = 0.f;
-
+ //Bullrush stun
+    m_bChargeCrashed = false;
+    m_flChargeMovingSince = 0.f;
 //Demo's shield
     m_hChargeShield = NULL;
 
@@ -148,6 +159,58 @@ CTFWearableDemoShield* CSoldierCommando::EnsureChargeShield()
     return pShield;
 }
 
+//AGR START
+void CSoldierCommando::ThinkChargeCrash()
+{
+    CTFPlayer* pOwner = m_hOwner.Get();
+    if (!pOwner || !pOwner->IsAlive())
+        return;
+
+    if (!pOwner->m_Shared.InCond(TF_COND_SHIELD_CHARGE))
+    {
+        m_bChargeCrashed = false;
+        m_flChargeMovingSince = 0.f;
+        return;
+    }
+
+    if (m_bChargeCrashed)
+        return;
+
+    Vector vecVel = pOwner->GetAbsVelocity();
+    vecVel.z = 0.f;
+    float flSpeed2D = vecVel.Length();
+
+    float flEps = tf_sc_charge_crash_speed_eps.GetFloat();
+
+    if (flSpeed2D > flEps)
+    {
+        if (m_flChargeMovingSince == 0.f)
+            m_flChargeMovingSince = gpGlobals->curtime;
+        return;
+    }
+
+    if (m_flChargeMovingSince == 0.f)
+        return;
+    if (gpGlobals->curtime - m_flChargeMovingSince < tf_sc_charge_crash_min_moving_time.GetFloat())
+        return;
+
+    Vector vecForward = pOwner->BodyDirection2D();
+    Vector vecStart = pOwner->GetAbsOrigin();
+    Vector vecEnd = vecStart + vecForward * 40.f;
+
+    trace_t tr;
+    UTIL_TraceLine(vecStart, vecEnd, MASK_SOLID_BRUSHONLY, pOwner, COLLISION_GROUP_NONE, &tr);
+
+    if (tr.fraction >= 1.f && !tr.startsolid)
+        return; 
+
+    m_bChargeCrashed = true;
+    pOwner->m_Shared.RemoveCond(TF_COND_SHIELD_CHARGE);
+    pOwner->SetAbsVelocity(vec3_origin);
+    pOwner->m_Shared.AddCond(TF_COND_STUNNED, tf_sc_charge_crash_stun.GetFloat());
+    pOwner->EmitSound("Player.DenyWeaponSelection");
+}
+//AGR END
 //-------------------------------------------------------------------------
 // Tapes
 //-------------------------------------------------------------------------
@@ -397,6 +460,17 @@ void CSoldierCommando::ThinkChargeCamera()
   CTFPlayer* pOwner = m_hOwner.Get();
   if (!pOwner)
     return;
+  //AGR START
+  if (pOwner->m_Shared.InCond(TF_COND_STUNNED))
+  {
+      if (m_bChargeCamActive)
+      {
+          pOwner->SetForcedTauntCam(0);
+          m_bChargeCamActive = false;
+      }
+      return;
+  }
+  //AGR END
 
   bool bCharging = pOwner->m_Shared.InCond(TF_COND_SHIELD_CHARGE);
 
@@ -444,6 +518,7 @@ void CSoldierCommando::Think()
     ThinkAdrenaline();
     ThinkBattlecry();
     ThinkChargeRecharge();
+    ThinkChargeCrash();
     ThinkChargeCamera();
     // ThinkBoot();
 }
