@@ -164,8 +164,12 @@ static bool IsChargeBlocked( CTFPlayer *pPlayer, const Vector &vecDir )
 {
   Vector vecStart = pPlayer->GetAbsOrigin();
 
+  // Ignore anything the player could simply step over (ramp bottoms, curbs)
+  Vector vecMins = pPlayer->GetPlayerMins();
+  vecMins.z += 18.f;
+
   trace_t tr;
-  UTIL_TraceHull( vecStart, vecStart + vecDir * 32.f, pPlayer->GetPlayerMins(), pPlayer->GetPlayerMaxs(), MASK_PLAYERSOLID_BRUSHONLY, pPlayer, COLLISION_GROUP_PLAYER_MOVEMENT, &tr );
+  UTIL_TraceHull( vecStart, vecStart + vecDir * 32.f, vecMins, pPlayer->GetPlayerMaxs(), MASK_PLAYERSOLID_BRUSHONLY, pPlayer, COLLISION_GROUP_PLAYER_MOVEMENT, &tr );
 
   if ( !tr.DidHit() || tr.plane.normal.z > 0.7f )
     return false;
