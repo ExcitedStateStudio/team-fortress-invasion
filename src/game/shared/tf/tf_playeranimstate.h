@@ -65,6 +65,8 @@ public:
 	virtual void RestartGesture( int iGestureSlot, Activity iGestureActivity, bool bAutoKill = true );
 
 	void	SetRenderangles( const QAngle& angles ) { m_angRender = angles; }
+	//Scout-recon gaben's system
+	void ComputeScoutMovePoseParameters(CStudioHdr* pStudioHdr);
 
 	void	Vehicle_LeanAccel( float flInAccel );
 private:
@@ -81,6 +83,11 @@ private:
 	float		m_flVehicleLeanVel;
 	float		m_flVehicleLeanPos;
 	Vector		m_vecSmoothedUp;
+
+	//Scoutcon systems
+	float		m_flReconSmoothedX;
+	float		m_flReconSmoothedY;
+	bool		m_bReconSmoothInit;
 
 	typedef std::pair< int, float > CachedPoseParam_t;
 	CUtlVector< CachedPoseParam_t > m_PlayerPoseParams;

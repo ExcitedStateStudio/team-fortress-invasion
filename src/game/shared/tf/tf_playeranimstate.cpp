@@ -33,6 +33,23 @@
 #define TF_WALK_SPEED			75.0f
 #define TF_CROUCHWALK_SPEED		110.0f
 
+//BASE TG RECON
+static ConVar sv_tg_recon("sv_tg_recon", "1", FCVAR_REPLICATED | FCVAR_NOTIFY,
+	"Team gaben's recon walk system");
+
+//Tg recon settings
+static ConVar sv_tg_recon_swap("sv_tg_recon_swap", "0", FCVAR_REPLICATED,
+	"Swap x and y for rcon walk");
+static ConVar sv_tg_recon_invert_x("sv_tg_recon_invert_x", "0", FCVAR_REPLICATED,
+	"Invert x sign for rcon walk");
+static ConVar sv_tg_recon_invert_y("sv_tg_recon_invert_y", "0", FCVAR_REPLICATED,
+	"Invert y sign for rcon walk");
+static ConVar sv_tg_recon_debug("sv_tg_recon_debug", "0", FCVAR_REPLICATED,
+	"Print x/y values for the local rcon player.");
+
+
+static ConVar sv_tg_recon_smooth("sv_tg_recon_smooth", "15", FCVAR_REPLICATED | FCVAR_NOTIFY, "");
+
 //-----------------------------------------------------------------------------
 // Purpose: 
 // Input  : *pPlayer - 
@@ -104,6 +121,11 @@ void CTFPlayerAnimState::InitTF( CTFPlayer *pPlayer )
 	m_vecSmoothedUp = Vector( 0.f, 0.f, 1.f );
 	m_flVehicleLeanVel = 0.f;
 	m_flVehicleLeanPos = 0.f;
+
+	//Scoutcon
+	m_flReconSmoothedX = 0.f;
+	m_flReconSmoothedY = 0.f;
+	m_bReconSmoothInit = false;
 }
 
 //-----------------------------------------------------------------------------
@@ -121,30 +143,48 @@ void CTFPlayerAnimState::ClearAnimationState( void )
 // Input  : actDesired - 
 // Output : Activity
 //-----------------------------------------------------------------------------
-Activity CTFPlayerAnimState::TranslateActivity( Activity actDesired )
+Activity CTFPlayerAnimState::TranslateActivity(Activity actDesired)
 {
-	Activity translateActivity = BaseClass::TranslateActivity( actDesired );
+	CTFPlayer* pPlayer = GetTFPlayer();
+	if (!pPlayer)
+		return actDesired;
 
-	translateActivity = ActivityOverride( translateActivity, NULL );
+	Activity baseActivity = BaseClass::TranslateActivity(actDesired);
+	baseActivity = ActivityOverride(baseActivity, NULL);
 
-	CBaseCombatWeapon *pWeapon = GetTFPlayer()->GetActiveWeapon();
-	if ( pWeapon )
+	Activity translateActivity = baseActivity;
+
+	CBaseCombatWeapon* pWeapon = pPlayer->GetActiveWeapon();
+	if (pWeapon)
 	{
-		translateActivity = pWeapon->ActivityOverride( translateActivity, NULL );
+		Activity weaponActivity = pWeapon->ActivityOverride(translateActivity, NULL);
 
-		CEconItemView *pEconItemView = pWeapon->GetAttributeContainer()->GetItem();
-		if ( pEconItemView )
+		CEconItemView* pEconItemView = pWeapon->GetAttributeContainer()->GetItem();
+		if (pEconItemView)
 		{
-			translateActivity = pEconItemView->GetStaticData()->GetActivityOverride( GetTFPlayer()->GetTeamNumber(), translateActivity );
+			weaponActivity = pEconItemView->GetStaticData()->GetActivityOverride(pPlayer->GetTeamNumber(), weaponActivity);
+		}
+
+		if (pPlayer->SelectWeightedSequence(weaponActivity) != ACTIVITY_NOT_AVAILABLE)
+		{
+			translateActivity = weaponActivity;
 		}
 	}
 
-	CTFPlayer *pPlayer = GetTFPlayer();
-	if ( pPlayer->m_Shared.InCond( TF_COND_COMPETITIVE_WINNER ) )
+	if (pPlayer->SelectWeightedSequence(translateActivity) == ACTIVITY_NOT_AVAILABLE)
 	{
-		if ( translateActivity == ACT_MP_STAND_PRIMARY || 
-		   ( pPlayer->IsPlayerClass( TF_CLASS_SPY ) && ( translateActivity == ACT_MP_STAND_MELEE ) ) || 
-		   ( pPlayer->IsPlayerClass( TF_CLASS_DEMOMAN ) && ( translateActivity == ACT_MP_STAND_SECONDARY ) ) )
+		if (pPlayer->SelectWeightedSequence(actDesired) != ACTIVITY_NOT_AVAILABLE)
+		{
+			translateActivity = actDesired;
+		}
+	}
+
+	CTFPlayer* pTFPlayer = GetTFPlayer();
+	if (pTFPlayer->m_Shared.InCond(TF_COND_COMPETITIVE_WINNER))
+	{
+		if (translateActivity == ACT_MP_STAND_PRIMARY ||
+			(pTFPlayer->IsPlayerClass(TF_CLASS_SPY) && translateActivity == ACT_MP_STAND_MELEE) ||
+			(pTFPlayer->IsPlayerClass(TF_CLASS_DEMOMAN) && translateActivity == ACT_MP_STAND_SECONDARY))
 		{
 			translateActivity = ACT_MP_COMPETITIVE_WINNERSTATE;
 		}
@@ -416,10 +456,17 @@ void CTFPlayerAnimState::Update( float eyeYaw, float eyePitch )
 			m_pTFPlayer->SetPoseParameter( pStudioHdr, m_PlayerPoseParams[i].first, m_PlayerPoseParams[i].second );
 		}
 
-		if ( !bIsImmobilized )
+		if (!bIsImmobilized)
 		{
-			// Pose parameter - what direction are the player's legs running in.
-			ComputePoseParam_MoveYaw( pStudioHdr );
+
+			if (m_pTFPlayer->IsPlayerClass(TF_CLASS_SCOUT) && sv_tg_recon.GetBool())
+			{
+				ComputeScoutMovePoseParameters(pStudioHdr);
+			}
+			else
+			{
+				ComputePoseParam_MoveYaw(pStudioHdr);
+			}
 		}
 
 		if ( bInTaunt )
@@ -514,6 +561,112 @@ void CTFPlayerAnimState::Update( float eyeYaw, float eyePitch )
 #endif
 }
 
+//--AGR Recon anims changes
+void CTFPlayerAnimState::ComputeScoutMovePoseParameters(CStudioHdr* pStudioHdr)
+{
+	CTFPlayer* pPlayer = GetTFPlayer();
+	if (!pPlayer)
+		return;
+
+	if (!sv_tg_recon.GetBool())
+		return;
+
+	if (!pPlayer->IsPlayerClass(TF_CLASS_SCOUT))
+		return;
+
+	const int iMoveX = m_PoseParameterData.m_iMoveX;
+	const int iMoveY = m_PoseParameterData.m_iMoveY;
+	if (iMoveX < 0 || iMoveY < 0)
+		return;
+
+	float flForward = 0.0f;
+	float flRight = 0.0f;
+
+	const int b = pPlayer->m_nButtons;
+	if (b & IN_FORWARD)   flForward += 1.0f;
+	if (b & IN_BACK)      flForward -= 1.0f;
+	if (b & IN_MOVERIGHT) flRight += 1.0f;
+	if (b & IN_MOVELEFT)  flRight -= 1.0f;
+
+
+	const float flLen = sqrtf(flForward * flForward + flRight * flRight);
+	if (flLen > 1.0f)
+	{
+		flForward /= flLen;
+		flRight /= flLen;
+	}
+
+	Vector vel = pPlayer->GetAbsVelocity();
+	vel.z = 0.0f;
+
+	float flMaxSpeed = pPlayer->MaxSpeed();
+	if (flMaxSpeed <= 1.0f)
+		flMaxSpeed = 1.0f;
+
+	float flSpeedRatio = clamp(vel.Length() / flMaxSpeed, 0.0f, 1.0f);
+
+	float targetX = flRight * flSpeedRatio;
+	float targetY = -flForward * flSpeedRatio;
+
+	if (sv_tg_recon_invert_x.GetBool()) targetX = -targetX;
+	if (sv_tg_recon_invert_y.GetBool()) targetY = -targetY;
+	if (sv_tg_recon_swap.GetBool())
+	{
+		float t = targetX;
+		targetX = targetY;
+		targetY = t;
+	}
+
+	
+	const float flSmooth = sv_tg_recon_smooth.GetFloat();
+
+	if (flSmooth > 0.0f)
+	{
+		float dt = gpGlobals->frametime;
+		if (dt < 0.0f) dt = 0.0f;
+		if (dt > 0.1f) dt = 0.1f;
+
+		const float flMaxStep = flSmooth * dt;
+
+		if (!m_bReconSmoothInit)
+		{
+			m_flReconSmoothedX = targetX;
+			m_flReconSmoothedY = targetY;
+			m_bReconSmoothInit = true;
+		}
+		else
+		{
+			m_flReconSmoothedX = Approach(targetX, m_flReconSmoothedX, flMaxStep);
+			m_flReconSmoothedY = Approach(targetY, m_flReconSmoothedY, flMaxStep);
+		}
+
+		targetX = m_flReconSmoothedX;
+		targetY = m_flReconSmoothedY;
+	}
+	else
+	{
+		m_bReconSmoothInit = false;
+		m_flReconSmoothedX = targetX;
+		m_flReconSmoothedY = targetY;
+	}
+
+	pPlayer->SetPoseParameter(pStudioHdr, iMoveX, targetX);
+	pPlayer->SetPoseParameter(pStudioHdr, iMoveY, targetY);
+
+	if (sv_tg_recon_debug.GetBool())
+	{
+#ifdef CLIENT_DLL
+		if (pPlayer->IsLocalPlayer())
+#else
+		if (!pPlayer->IsBot())
+#endif
+		{
+			Msg("[tg_recon_scout] btn=0x%X  spd=%.2f -> move_x=%+.2f move_y=%+.2f\n",
+				b, flSpeedRatio, targetX, targetY);
+		}
+	}
+}
+// -- AGR END
 //-----------------------------------------------------------------------------
 // Updates animation state if we are throwing the passtime ball
 //-----------------------------------------------------------------------------
